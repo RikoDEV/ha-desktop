@@ -2,6 +2,8 @@
 
 A lightweight system tray client for [Home Assistant](https://www.home-assistant.io/), built with Avalonia UI on .NET. It lives in your tray, connects to your HA instance over the WebSocket API, and gives you quick access to entities, cameras, media players, weather, and notifications without opening a browser tab.
 
+<img width="2560" height="1440" alt="uNaswG2y88" src="https://github.com/user-attachments/assets/8ad64ea4-d0c0-4e86-8b5a-5af3080aefbd" />
+
 ## Features
 
 - **Quick-toggle tiles** — pin lights, switches, and other entities to the tray flyout for one-click control, with custom labels, icons, and small/wide sizing.
