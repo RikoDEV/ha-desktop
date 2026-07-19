@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace HaDesktop.Core.Storage;
 
@@ -34,20 +35,37 @@ public static class MobileAppRegistrationStore
         if (!File.Exists(FilePath))
             return null;
 
-        PersistedMetadata? metadata;
+        JsonObject? raw;
         try
         {
             var json = await File.ReadAllTextAsync(FilePath);
-            metadata = JsonSerializer.Deserialize<PersistedMetadata>(json);
+            raw = JsonNode.Parse(json)?.AsObject();
         }
         catch (JsonException)
         {
             return null;
         }
+        if (raw is null) return null;
+
+        var metadata = raw.Deserialize<PersistedMetadata>();
         if (metadata is null) return null;
 
         var webhookId = await SecretStore.Current.LoadAsync(WebhookSecretKey);
-        if (webhookId is null) return null; // desynced from the secret store — treat as unregistered rather than reuse a half-known registration
+        if (webhookId is null)
+        {
+            // Migrating from a pre-refactor file that stored webhook_id in this plain JSON
+            // directly (this "WebhookId" property won't exist in files written by SaveAsync
+            // above). Pull it out once, move it into the secret store, and rewrite the file
+            // without it, instead of discarding a perfectly valid registration and orphaning
+            // this device in HA by registering a brand-new one.
+            var legacyWebhookId = raw["WebhookId"]?.GetValue<string>();
+            if (legacyWebhookId is null) return null; // genuinely unregistered
+
+            webhookId = legacyWebhookId;
+            var migrated = new MobileAppRegistration(metadata.DeviceId, metadata.BaseUrl, webhookId, metadata.RegisteredSensorKeys);
+            await SaveAsync(migrated);
+            return migrated;
+        }
 
         return new MobileAppRegistration(metadata.DeviceId, metadata.BaseUrl, webhookId, metadata.RegisteredSensorKeys);
     }

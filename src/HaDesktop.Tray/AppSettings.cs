@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using HaDesktop.Core.Ha;
@@ -43,7 +44,7 @@ public static class AppSettings
     public static event Action? NotificationHistoryChanged;
 
     public static Task SendTestNotificationAsync() =>
-        NativeNotifier.Current.ShowAsync(Loc.Instance.Tr("Notification.TestTitle"), Loc.Instance.Tr("Notification.TestBody"));
+        NativeNotifier.Current.ShowAsync(Loc.Instance.Tr("Notification.TestTitle"), Loc.Instance.Tr("Notification.TestBody"), null, Array.Empty<NotificationAction>(), silent: false);
 
     public static async Task LoadLocalPreferencesAsync()
     {
@@ -173,15 +174,28 @@ public static class AppSettings
         try
         {
             await Credentials.RefreshAsync();
+        }
+        catch
+        {
+            // The refresh token itself was rejected (revoked, HA reinstalled, etc.) — this is the
+            // one case that actually means the saved session is gone for good.
+            Credentials = null;
+            await CredentialStore.Current.ClearAsync();
+            return false;
+        }
+
+        try
+        {
             await EstablishClientAsync();
             ScheduleRefresh();
             return true;
         }
         catch
         {
-            // Saved refresh token no longer valid (revoked, HA reinstalled, etc.) — fall back to login.
-            Credentials = null;
-            await CredentialStore.Current.ClearAsync();
+            // Refresh succeeded — the session itself is still valid — but connecting failed for
+            // some other reason (HA temporarily unreachable, a network blip during an abrupt
+            // restart, etc.). Keep the saved credentials so the next retry/relaunch can still use
+            // them instead of forcing the user through a full sign-in again.
             return false;
         }
     }
@@ -326,7 +340,32 @@ public static class AppSettings
         NotificationHistoryChanged?.Invoke();
 
         if (!NotificationsEnabled) return;
-        _ = NativeNotifier.Current.ShowAsync(notification.Title, notification.Message);
+        _ = ShowAndReportActionAsync(notification);
+    }
+
+    /// <summary>
+    /// Shows the notification and, if the user clicked an action button, reports it back to HA
+    /// as a "mobile_app_notification_action" event — the same protocol the official companion
+    /// apps use. On Windows this is a no-op here (ShowAsync always returns null there); the click
+    /// is reported by a relaunch of this exe instead — see Program.cs and WindowsNativeNotifier.
+    /// </summary>
+    private static async Task ShowAndReportActionAsync(HaNotification notification)
+    {
+        var actionId = await NativeNotifier.Current.ShowAsync(
+            notification.Title, notification.Message, notification.ImageBytes,
+            notification.Actions ?? Array.Empty<NotificationAction>(), notification.Silent);
+
+        if (actionId is null || Credentials is null || Registration is null) return;
+
+        try
+        {
+            await MobileAppClient.FireEventAsync(Credentials.ToConnectionSettings(), Registration.WebhookId,
+                "mobile_app_notification_action", new JsonObject { ["action"] = actionId });
+        }
+        catch
+        {
+            // best effort — the button click still visually registered for the user even if HA never hears about it
+        }
     }
 
     private static void UpdateSensorTimer()

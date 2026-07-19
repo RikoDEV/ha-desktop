@@ -71,6 +71,18 @@ public sealed class HaMobileAppClient
         return PostWebhookAsync(settings, webhookId, "update_sensor_states", array, ct);
     }
 
+    /// <summary>
+    /// Fires an arbitrary HA event as this device — used to report an actionable-notification
+    /// button press back as a "mobile_app_notification_action" event, the same protocol the
+    /// official companion apps use (see developers.home-assistant.io "Sending data" docs).
+    /// </summary>
+    public Task FireEventAsync(HaConnectionSettings settings, string webhookId, string eventType, JsonObject eventData, CancellationToken ct = default) =>
+        PostWebhookAsync(settings, webhookId, "fire_event", new JsonObject
+        {
+            ["event_type"] = eventType,
+            ["event_data"] = eventData,
+        }, ct);
+
     private async Task PostWebhookAsync(HaConnectionSettings settings, string webhookId, string type, JsonNode data, CancellationToken ct)
     {
         var body = new JsonObject { ["type"] = type, ["data"] = data };

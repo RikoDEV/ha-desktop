@@ -316,7 +316,14 @@ public sealed class HaClient : IAsyncDisposable
             {
                 var json = await ReceiveJsonAsync(socket, ct).ConfigureAwait(false);
                 if (json is null) break; // server sent a close frame
-                HandleMessage(json);
+
+                // A single unexpected message shape (an assumption about a field's type that
+                // doesn't hold for some payload) must never take down the whole receive loop —
+                // that silently stops all future messages (state updates, pushes, everything)
+                // without ever disconnecting, which is exactly what an uncaught exception here
+                // used to do.
+                try { HandleMessage(json); }
+                catch { /* best effort — skip this one message, keep the connection alive */ }
             }
         }
         catch (OperationCanceledException) { /* deliberate shutdown via DisposeAsync, ct was cancelled */ }
@@ -374,15 +381,77 @@ public sealed class HaClient : IAsyncDisposable
 
     private void HandlePushNotificationEvent(JsonObject eventObj)
     {
-        var message = eventObj["message"]?.GetValue<string>();
+        var message = AsString(eventObj["message"]);
         if (message is null) return; // not a real notification (e.g. a channel control message)
 
-        var title = eventObj["title"]?.GetValue<string>();
-        NotificationReceived?.Invoke(new HaNotification(title, message));
+        var title = AsString(eventObj["title"]);
+        var data = eventObj["data"] as JsonObject;
 
-        var confirmId = eventObj["hass_confirm_id"]?.GetValue<string>();
+        var actions = data?["actions"]?.AsArray()
+            .OfType<JsonObject>()
+            .Select(a => (Action: AsString(a["action"]), Title: AsString(a["title"])))
+            .Where(a => a.Action is not null && a.Title is not null)
+            .Select(a => new NotificationAction(a.Action!, a.Title!))
+            .ToList();
+
+        // "data.push.sound" is the iOS/macOS field for this; there's no Android/desktop equivalent
+        // field name, so treating "none" there as "silent" is the closest cross-platform mapping.
+        // The field can be a plain string ("none") or a richer object (e.g. critical alerts:
+        // {"name": "default", "critical": 1, "volume": 1}) — read the name out of either shape
+        // rather than assuming a string, which would throw and silently kill the receive loop
+        // for every message after it (this exact payload shape did exactly that before this fix).
+        var soundNode = data?["push"]?["sound"];
+        var soundName = soundNode is JsonObject soundObj ? AsString(soundObj["name"]) : AsString(soundNode);
+        var silent = soundName == "none";
+
+        // data.attachment.url is the newer/richer field (supports content-type override,
+        // lazy-loading, etc.) and takes precedence over the older data.image per HA's own docs.
+        var imageUrl = AsString(data?["attachment"]?["url"]) ?? AsString(data?["image"]);
+        _ = HandleNotificationAsync(title, message, imageUrl, actions, silent);
+
+        var confirmId = AsString(eventObj["hass_confirm_id"]);
         if (confirmId is not null)
             _ = SendConfirmAsync(confirmId);
+    }
+
+    private static string? AsString(JsonNode? node) => node is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
+
+    private static readonly HttpClient NotificationImageHttp = new();
+
+    private async Task HandleNotificationAsync(string? title, string message, string? imageUrl, List<NotificationAction>? actions, bool silent)
+    {
+        var imageBytes = imageUrl is null ? null : await TryDownloadImageAsync(imageUrl).ConfigureAwait(false);
+        NotificationReceived?.Invoke(new HaNotification(title, message, imageBytes, actions, silent));
+    }
+
+    /// <summary>Same rule the camera/album-art fetches use: an absolute URL is fetched as-is, a relative one (e.g. "/local/icon.png") is resolved against the HA instance and sent with the same bearer token as every other API call.</summary>
+    private async Task<byte[]?> TryDownloadImageAsync(string rawUrl)
+    {
+        try
+        {
+            Uri uri;
+            var needsAuth = false;
+            if (rawUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || rawUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                uri = new Uri(rawUrl);
+            }
+            else
+            {
+                uri = new Uri(new Uri(_settings.BaseUrl.TrimEnd('/') + "/"), rawUrl.TrimStart('/'));
+                needsAuth = true;
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            if (needsAuth)
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.AccessToken);
+
+            using var response = await NotificationImageHttp.SendAsync(request).ConfigureAwait(false);
+            return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false) : null;
+        }
+        catch
+        {
+            return null; // best effort — show the notification without the image rather than not at all
+        }
     }
 
     private async Task SendConfirmAsync(string confirmId)
