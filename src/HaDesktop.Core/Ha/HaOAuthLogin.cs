@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -17,16 +18,29 @@ namespace HaDesktop.Core.Ha;
 /// IndieAuth client-id verification requires them to share the same host
 /// and port, which a loopback address trivially satisfies without needing
 /// to host anything.
+///
+/// Uses PKCE (RFC 7636) on top of that: GetFreeLoopbackPort briefly releases
+/// the port before HttpListener rebinds it, leaving a narrow window where
+/// another local process could win the race and receive the browser's
+/// redirect (code + state) instead of us. PKCE means that stolen code is
+/// useless without the code_verifier this process never shares with anyone,
+/// since only the token exchange below ever sends it.
 /// </summary>
 public static class HaOAuthLogin
 {
     public static async Task<HaOAuthCredentials> LoginAsync(string baseUrl, CancellationToken ct = default)
     {
         baseUrl = baseUrl.TrimEnd('/');
+        if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Home Assistant URL must start with http:// or https://.");
+
         var port = GetFreeLoopbackPort();
         var redirectUri = $"http://127.0.0.1:{port}/callback";
         var clientId = $"http://127.0.0.1:{port}/";
         var state = Guid.NewGuid().ToString("N");
+        var codeVerifier = GenerateCodeVerifier();
+        var codeChallenge = ComputeCodeChallenge(codeVerifier);
 
         var listener = new HttpListener();
         listener.Prefixes.Add($"http://127.0.0.1:{port}/");
@@ -38,12 +52,14 @@ public static class HaOAuthLogin
                 $"{baseUrl}/auth/authorize?response_type=code" +
                 $"&client_id={Uri.EscapeDataString(clientId)}" +
                 $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
-                $"&state={state}";
+                $"&state={state}" +
+                $"&code_challenge={codeChallenge}" +
+                "&code_challenge_method=S256";
 
             Process.Start(new ProcessStartInfo(authorizeUrl) { UseShellExecute = true });
 
             var code = await WaitForCallbackAsync(listener, state, ct).ConfigureAwait(false);
-            return await ExchangeCodeAsync(baseUrl, clientId, redirectUri, code, ct).ConfigureAwait(false);
+            return await ExchangeCodeAsync(baseUrl, clientId, redirectUri, code, codeVerifier, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -51,6 +67,14 @@ public static class HaOAuthLogin
             listener.Close();
         }
     }
+
+    private static string GenerateCodeVerifier() => Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+
+    private static string ComputeCodeChallenge(string codeVerifier) =>
+        Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
+
+    private static string Base64UrlEncode(byte[] bytes) =>
+        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static async Task<string> WaitForCallbackAsync(HttpListener listener, string expectedState, CancellationToken ct)
     {
@@ -101,7 +125,7 @@ public static class HaOAuthLogin
         context.Response.OutputStream.Close();
     }
 
-    private static async Task<HaOAuthCredentials> ExchangeCodeAsync(string baseUrl, string clientId, string redirectUri, string code, CancellationToken ct)
+    private static async Task<HaOAuthCredentials> ExchangeCodeAsync(string baseUrl, string clientId, string redirectUri, string code, string codeVerifier, CancellationToken ct)
     {
         using var http = new HttpClient();
         var form = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -109,6 +133,7 @@ public static class HaOAuthLogin
             ["grant_type"] = "authorization_code",
             ["code"] = code,
             ["client_id"] = clientId,
+            ["code_verifier"] = codeVerifier,
         });
 
         using var response = await http.PostAsync($"{baseUrl}/auth/token", form, ct).ConfigureAwait(false);

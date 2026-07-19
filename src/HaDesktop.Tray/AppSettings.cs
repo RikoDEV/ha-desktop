@@ -211,8 +211,20 @@ public static class AppSettings
             Client = null;
         }
 
+        // Best-effort: revoke the refresh token on HA's side too, so a copy of it sitting in a
+        // credential-store backup or an old machine image doesn't stay valid forever after the
+        // user believes they've signed out. Local state is cleared regardless of whether this
+        // succeeds (HA unreachable, already revoked, etc.).
+        if (Credentials is not null)
+        {
+            try { await Credentials.RevokeAsync(); }
+            catch { /* best effort */ }
+        }
+
         Credentials = null;
+        Registration = null;
         await CredentialStore.Current.ClearAsync();
+        await MobileAppRegistrationStore.ClearAsync();
         ConnectionChanged?.Invoke();
     }
 

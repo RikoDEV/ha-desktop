@@ -38,4 +38,23 @@ public sealed class HaOAuthCredentials
         ExpiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(json["expires_in"]!.GetValue<double>());
         // HA's refresh response does not include a new refresh_token — the original stays valid.
     }
+
+    /// <summary>
+    /// Invalidates the refresh token on the HA side, so "Sign Out" actually revokes the session
+    /// instead of just forgetting it locally — without this, a copy of the refresh token (e.g.
+    /// from a stolen backup of the local credential store) would stay valid indefinitely.
+    /// Best-effort: sign-out should still clear local state even if HA is unreachable.
+    /// </summary>
+    public async Task RevokeAsync(CancellationToken ct = default)
+    {
+        using var http = new HttpClient();
+        var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["action"] = "revoke",
+            ["token"] = RefreshToken,
+        });
+
+        using var response = await http.PostAsync($"{BaseUrl}/auth/token", form, ct).ConfigureAwait(false);
+        // HA returns 200 with an empty body on success; not treated as fatal either way — see summary above.
+    }
 }

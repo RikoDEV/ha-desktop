@@ -1,51 +1,37 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
-using System.Text.Json;
 
 namespace HaDesktop.Core.Storage;
 
 /// <summary>
-/// Stores the refresh token via the freedesktop Secret Service (GNOME
-/// Keyring / KWallet) using the `secret-tool` CLI from libsecret-tools.
-/// Falls back to "no saved session" if libsecret isn't installed, rather
-/// than ever writing the token to a plain file.
+/// Stores secrets via the freedesktop Secret Service (GNOME Keyring / KWallet)
+/// using the `secret-tool` CLI from libsecret-tools. Each secret is keyed by
+/// an account name under one shared service. Falls back to "no saved value"
+/// if libsecret isn't installed, rather than ever writing a secret to a plain file.
 /// </summary>
 [SupportedOSPlatform("linux")]
-public sealed class LinuxCredentialStore : ICredentialStore
+public sealed class LinuxSecretStore : ISecretStore
 {
     private const string ServiceAttr = "hadesktop";
-    private const string AccountAttr = "default";
 
-    public async Task SaveAsync(PersistedHaCredentials credentials)
+    public async Task SaveAsync(string key, string secret)
     {
-        var json = JsonSerializer.Serialize(credentials);
         await RunSecretToolAsync(
-            stdin: json,
-            "store", "--label=HA Desktop credentials",
-            "service", ServiceAttr, "account", AccountAttr);
+            stdin: secret,
+            "store", "--label=HA Desktop", "service", ServiceAttr, "account", key);
     }
 
-    public async Task<PersistedHaCredentials?> LoadAsync()
+    public async Task<string?> LoadAsync(string key)
     {
         var (exitCode, stdout) = await RunSecretToolAsync(
             stdin: null,
-            "lookup", "service", ServiceAttr, "account", AccountAttr);
-        if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
-            return null;
-
-        try
-        {
-            return JsonSerializer.Deserialize<PersistedHaCredentials>(stdout.Trim());
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+            "lookup", "service", ServiceAttr, "account", key);
+        return exitCode == 0 && !string.IsNullOrWhiteSpace(stdout) ? stdout.Trim() : null;
     }
 
-    public async Task ClearAsync()
+    public async Task ClearAsync(string key)
     {
-        await RunSecretToolAsync(stdin: null, "clear", "service", ServiceAttr, "account", AccountAttr);
+        await RunSecretToolAsync(stdin: null, "clear", "service", ServiceAttr, "account", key);
     }
 
     private static async Task<(int ExitCode, string Stdout)> RunSecretToolAsync(string? stdin, params string[] args)
