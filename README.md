@@ -74,3 +74,7 @@ installer/
   ci.yml                # Build check on every push/PR
   release.yml            # Builds installer + portable packages and publishes a GitHub Release on tag push
 ```
+
+## License
+
+[MIT](LICENSE)

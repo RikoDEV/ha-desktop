@@ -8,9 +8,11 @@ namespace HaDesktop.Core.Notifications;
 
 /// <summary>
 /// Shows a real Windows Action Center toast via a short PowerShell script using the WinRT
-/// ToastNotificationManager — no extra NuGet package or app-packaging identity required, at the
-/// cost of the toast showing under a generic sender name rather than "HA Desktop" specifically
-/// (a known limitation of unpackaged apps using this approach).
+/// ToastNotificationManager — no extra NuGet package or full app-packaging required. The toast's
+/// icon comes from a Start Menu shortcut (see <see cref="WindowsToastShortcut"/>) carrying an
+/// AppUserModelID matching the "HA Desktop" identifier passed to CreateToastNotifier below —
+/// without a shortcut registering that identity and pointing at this exe's own icon, Windows has
+/// nothing to look up and falls back to a generic icon.
 ///
 /// Action buttons use activationType="protocol" (arguments="hadesktop-notify-action:{id}"),
 /// resolved via <see cref="EnsureProtocolRegistered"/> to a per-user registry entry that reopens
@@ -78,6 +80,7 @@ public sealed class WindowsNativeNotifier : INativeNotifier
     public async Task<string?> ShowAsync(string? title, string message, byte[]? imageBytes, IReadOnlyList<NotificationAction> actions, bool silent)
     {
         EnsureProtocolRegistered();
+        WindowsToastShortcut.EnsureRegistered();
 
         string? imagePath = null;
         if (imageBytes is not null)

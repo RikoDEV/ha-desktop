@@ -66,11 +66,10 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             "/DMyAppVersion=$env:VERSION" `
             "/DSourceDir=$(Resolve-Path publish/win-x64)" `
-            "/O$(Resolve-Path artifacts)" `
+            "/O$(Get-Location)" `
             installer\windows\setup.iss
 
       - uses: actions/upload-artifact@v4
@@ -78,7 +77,7 @@ jobs:
           name: windows-artifacts
           path: |
             HaDesktop-*-win-x64-portable.zip
-            artifacts/HaDesktop-Setup-*.exe
+            HaDesktop-Setup-*.exe
 
   build-macos:
     needs: prepare
