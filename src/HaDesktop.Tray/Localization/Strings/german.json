@@ -35,6 +35,7 @@
   "Media.Power": "Ein/Aus",
   "Media.Shuffle": "Zufallswiedergabe",
   "Media.Repeat": "Wiederholen",
+  "Media.Volume": "Lautstärke",
   "Media.Off": "Aus",
 
   "Light.Brightness": "Helligkeit: {0}%",

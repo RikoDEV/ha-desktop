@@ -78,7 +78,7 @@ public partial class MediaPlayerWidget : UserControl
         this.FindControl<PathIcon>("ShuffleIcon")!.Data = Geometry.Parse(ShuffleIconPath);
         this.FindControl<PathIcon>("RepeatIcon")!.Data = Geometry.Parse(RepeatIconPath);
         this.FindControl<PathIcon>("PowerIcon")!.Data = Geometry.Parse(PowerIconPath);
-        this.FindControl<PathIcon>("VolumeIcon")!.Data = Geometry.Parse(VolumeIconPath);
+        this.FindControl<PathIcon>("VolumeButtonIcon")!.Data = Geometry.Parse(VolumeIconPath);
 
         this.FindControl<Button>("PreviousButton")!.Click += (_, _) => CallService("media_previous_track");
         this.FindControl<Button>("PlayPauseButton")!.Click += (_, _) => CallService("media_play_pause");
@@ -142,8 +142,7 @@ public partial class MediaPlayerWidget : UserControl
         repeatButton.Opacity = repeatMode is "all" or "one" ? 1.0 : 0.5;
 
         var volumeVisible = features.HasFlag(Feature.VolumeSet) && !isOff;
-        this.FindControl<PathIcon>("VolumeIcon")!.IsVisible = volumeVisible;
-        this.FindControl<Slider>("VolumeSlider")!.IsVisible = volumeVisible;
+        this.FindControl<Button>("VolumeButton")!.IsVisible = volumeVisible;
         if (volumeVisible)
         {
             var volume = state.Attributes.TryGetValue("volume_level", out var vol) && vol is not null
@@ -208,6 +207,7 @@ public partial class MediaPlayerWidget : UserControl
     {
         this.FindControl<Image>("BackgroundArtImage")!.IsVisible = visible;
         this.FindControl<Border>("BackgroundTint")!.IsVisible = visible;
+        this.FindControl<Border>("NoiseOverlay")!.IsVisible = visible;
     }
 
     private async Task LoadAlbumArtAsync(string rawUrl, HaConnectionSettings settings)

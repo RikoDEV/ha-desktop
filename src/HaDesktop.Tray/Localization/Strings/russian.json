@@ -35,6 +35,7 @@
   "Media.Power": "Питание",
   "Media.Shuffle": "Перемешать",
   "Media.Repeat": "Повтор",
+  "Media.Volume": "Громкость",
   "Media.Off": "Выключено",
 
   "Light.Brightness": "Яркость: {0}%",

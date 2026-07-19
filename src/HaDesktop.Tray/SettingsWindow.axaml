@@ -8,12 +8,27 @@
         Width="820" Height="640"
         CanResize="True"
         MinWidth="680" MinHeight="480"
-        Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+        Background="Transparent"
+        TransparencyLevelHint="AcrylicBlur, Mica, Blur"
         WindowStartupLocation="CenterScreen">
 
+    <!-- Same frosted-glass material as the tray flyout, so Settings doesn't look like a
+         plain opaque dialog bolted onto a translucent app. -->
+    <ExperimentalAcrylicBorder>
+        <ExperimentalAcrylicBorder.Material>
+            <ExperimentalAcrylicMaterial
+                BackgroundSource="Digger"
+                TintColor="{DynamicResource SolidBackgroundFillColorBase}"
+                TintOpacity="0.5"
+                MaterialOpacity="0.55" />
+        </ExperimentalAcrylicBorder.Material>
+
     <Grid ColumnDefinitions="220,*">
-        <Border Grid.Column="0" Background="{DynamicResource LayerFillColorDefaultBrush}" Padding="12,20">
-            <StackPanel Spacing="4">
+        <Grid Grid.Column="0">
+            <!-- Faded separately from the content below it — Opacity on the Border itself would
+                 fade the nav text/list along with the background. -->
+            <Border Background="{DynamicResource LayerFillColorDefaultBrush}" Opacity="0.6" />
+            <StackPanel Spacing="4" Margin="12,20">
                 <TextBlock Text="{loc:Tr Tray.Settings}" FontSize="20" FontWeight="SemiBold" Margin="8,0,8,16" />
                 <ListBox Name="NavList" SelectionChanged="OnNavSelectionChanged" Background="Transparent">
                     <ListBoxItem Content="{loc:Tr Nav.Connection}" />
@@ -25,7 +40,7 @@
                     <ListBoxItem Content="{loc:Tr Nav.About}" />
                 </ListBox>
             </StackPanel>
-        </Border>
+        </Grid>
 
         <ScrollViewer Grid.Column="1">
             <Grid Margin="28,24,28,24">
@@ -326,4 +341,5 @@
             </Grid>
         </ScrollViewer>
     </Grid>
+    </ExperimentalAcrylicBorder>
 </Window>

@@ -35,6 +35,7 @@
   "Media.Power": "Power",
   "Media.Shuffle": "Shuffle",
   "Media.Repeat": "Repeat",
+  "Media.Volume": "Volume",
   "Media.Off": "Off",
 
   "Light.Brightness": "Brightness: {0}%",

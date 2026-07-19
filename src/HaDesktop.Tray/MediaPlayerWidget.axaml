@@ -2,54 +2,110 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="using:HaDesktop.Tray.Localization"
              x:Class="HaDesktop.Tray.MediaPlayerWidget">
+    <UserControl.Styles>
+        <!-- FlyoutPresenter's default theme padding is quite generous (meant for touch-friendly
+             menus) — this tightens it just for the volume flyout, which is a single small slider. -->
+        <Style Selector="FlyoutPresenter.compactVolume">
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+        </Style>
+    </UserControl.Styles>
     <Border CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ControlFillColorDefaultBrush}">
         <Grid Name="RootGrid">
             <!--
                 Canvas never contributes its children's size to its own DesiredSize (unlike
-                Grid/StackPanel), so binding the Image to RootGrid's own Bounds here can't create
-                a measure feedback loop — the foreground StackPanel alone drives RootGrid's height,
-                and the background art just stretches to match it after layout, instead of the
-                bitmap's native resolution inflating the whole card.
+                Grid/StackPanel), so binding the inner Border to RootGrid's own Bounds here can't
+                create a measure feedback loop — the foreground StackPanel alone drives RootGrid's
+                height, and the background art just stretches to match it after layout, instead of
+                the bitmap's native resolution inflating the whole card.
+
+                The blurred Image is wrapped in its own rounded + clipped Border (rather than
+                relying on the outer card Border's clip) because BlurEffect expands a visual's
+                effective render bounds by its radius — without a clip at the same element that
+                matches the card's own rounding, that expanded render bled past the rounded corners
+                as a soft halo/shadow around the outside of the card.
             -->
             <Canvas ClipToBounds="True">
-                <Image Name="BackgroundArtImage" Stretch="UniformToFill" IsVisible="False"
-                       Width="{Binding #RootGrid.Bounds.Width}" Height="{Binding #RootGrid.Bounds.Height}">
-                    <Image.Effect>
-                        <BlurEffect Radius="30" />
-                    </Image.Effect>
-                </Image>
+                <Border Width="{Binding #RootGrid.Bounds.Width}" Height="{Binding #RootGrid.Bounds.Height}"
+                        CornerRadius="8" ClipToBounds="True">
+                    <Image Name="BackgroundArtImage" Stretch="UniformToFill" IsVisible="False">
+                        <Image.Effect>
+                            <BlurEffect Radius="30" />
+                        </Image.Effect>
+                    </Image>
+                </Border>
+
+                <!-- Subtle grain over the blurred art so it doesn't look like a flat, banded blur —
+                     the same trick frosted-glass materials use. A single stretched image rather
+                     than a tiled brush — tiling in this renderer left faint seams between tiles
+                     at every attempted fix, so this trades perfectly fine-grained repetition for
+                     something with no seams at all. Kept inside this same Canvas (not a direct
+                     Grid child) for the same measure-feedback-loop reason as the Border above. -->
+                <Border Name="NoiseOverlay" Width="{Binding #RootGrid.Bounds.Width}" Height="{Binding #RootGrid.Bounds.Height}"
+                        CornerRadius="8" ClipToBounds="True" IsVisible="False"
+                        IsHitTestVisible="False" Opacity="0.05">
+                    <Border.Background>
+                        <ImageBrush Source="avares://HaDesktop.Tray/Assets/noise.png" Stretch="Fill" />
+                    </Border.Background>
+                </Border>
             </Canvas>
             <Border Name="BackgroundTint" Background="{DynamicResource ControlFillColorDefaultBrush}" Opacity="0.72" IsVisible="False" />
 
-            <StackPanel Spacing="6" Margin="10">
+            <!-- Overlaid on top of the content below rather than laid out in the header row —
+                 click to open its volume Flyout instead of taking up permanent space next to the
+                 title. (Hover-to-open was tried first but fought with the popup's own hit-testing
+                 — opening it right next to the button made the button appear to lose pointer-over
+                 the instant it showed, closing and reopening it in a loop.) -->
+            <Button Name="VolumeButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0"
+                    Padding="4" Background="Transparent" BorderThickness="0" IsVisible="False"
+                    ToolTip.Tip="{loc:Tr Media.Volume}">
+                <PathIcon Name="VolumeButtonIcon" Width="14" Height="14" />
+                <Button.Flyout>
+                    <Flyout Placement="Bottom" VerticalOffset="6" ShowMode="Standard" FlyoutPresenterClasses="compactVolume">
+                        <Slider Name="VolumeSlider" Minimum="0" Maximum="1" Width="120" />
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+
+            <StackPanel Spacing="6" Margin="10,10,10,0">
                 <Grid ColumnDefinitions="40,*,Auto,Auto,Auto,Auto">
                     <Border Grid.Column="0" Width="40" Height="40" CornerRadius="5" ClipToBounds="True"
-                            Background="{DynamicResource ControlFillColorSecondaryBrush}" Margin="0,0,8,0">
+                            Background="{DynamicResource ControlFillColorSecondaryBrush}" Margin="0,0,8,0" VerticalAlignment="Top">
                         <Image Name="AlbumArtImage" Stretch="UniformToFill" />
                     </Border>
 
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
-                        <TextBlock Name="MediaTitleText" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Spacing="0">
+                        <TextBlock Name="MediaTitleText" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
                         <TextBlock Name="MediaArtistText" FontSize="11" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Left" Margin="0,2,0,0">
+                            <Button Name="ShuffleButton" Padding="4" Background="Transparent" BorderThickness="0" ToolTip.Tip="{loc:Tr Media.Shuffle}" IsVisible="False">
+                                <PathIcon Name="ShuffleIcon" Width="13" Height="13" />
+                            </Button>
+                            <Button Name="RepeatButton" Padding="4" Background="Transparent" BorderThickness="0" ToolTip.Tip="{loc:Tr Media.Repeat}" IsVisible="False">
+                                <PathIcon Name="RepeatIcon" Width="13" Height="13" />
+                            </Button>
+                        </StackPanel>
                     </StackPanel>
 
                     <Button Grid.Column="2" Name="PreviousButton" Padding="4" Background="Transparent" BorderThickness="0"
-                            VerticalAlignment="Center" ToolTip.Tip="{loc:Tr Media.Previous}">
+                            VerticalAlignment="Center" Margin="0,16,0,0" ToolTip.Tip="{loc:Tr Media.Previous}">
                         <PathIcon Name="PreviousIcon" Width="15" Height="15" />
                     </Button>
 
                     <Button Grid.Column="3" Name="PlayPauseButton" Padding="6" Background="Transparent" BorderThickness="0"
-                            VerticalAlignment="Center" ToolTip.Tip="{loc:Tr Media.PlayPause}">
+                            VerticalAlignment="Center" Margin="0,16,0,0" ToolTip.Tip="{loc:Tr Media.PlayPause}">
                         <PathIcon Name="PlayPauseIcon" Width="18" Height="18" />
                     </Button>
 
                     <Button Grid.Column="4" Name="NextButton" Padding="4" Background="Transparent" BorderThickness="0"
-                            VerticalAlignment="Center" ToolTip.Tip="{loc:Tr Media.Next}">
+                            VerticalAlignment="Center" Margin="0,16,0,0" ToolTip.Tip="{loc:Tr Media.Next}">
                         <PathIcon Name="NextIcon" Width="15" Height="15" />
                     </Button>
 
                     <Button Grid.Column="5" Name="PowerButton" Padding="4" Background="Transparent" BorderThickness="0"
-                            VerticalAlignment="Center" Margin="2,0,0,0" ToolTip.Tip="{loc:Tr Media.Power}" IsVisible="False">
+                            VerticalAlignment="Center" Margin="2,16,0,0" ToolTip.Tip="{loc:Tr Media.Power}" IsVisible="False">
                         <PathIcon Name="PowerIcon" Width="14" Height="14" />
                     </Button>
                 </Grid>
@@ -58,18 +114,6 @@
                     <TextBlock Name="PositionText" Grid.Column="0" FontSize="9" Opacity="0.6" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <Slider Name="ProgressSlider" Grid.Column="1" Minimum="0" Maximum="1" VerticalAlignment="Center" />
                     <TextBlock Name="DurationText" Grid.Column="2" FontSize="9" Opacity="0.6" VerticalAlignment="Center" Margin="4,0,0,0" />
-                </Grid>
-
-                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
-                    <Button Grid.Column="0" Name="ShuffleButton" Padding="4" Background="Transparent" BorderThickness="0" ToolTip.Tip="{loc:Tr Media.Shuffle}" IsVisible="False">
-                        <PathIcon Name="ShuffleIcon" Width="13" Height="13" />
-                    </Button>
-                    <Button Grid.Column="1" Name="RepeatButton" Padding="4" Background="Transparent" BorderThickness="0" ToolTip.Tip="{loc:Tr Media.Repeat}" IsVisible="False">
-                        <PathIcon Name="RepeatIcon" Width="13" Height="13" />
-                    </Button>
-
-                    <PathIcon Grid.Column="3" Name="VolumeIcon" Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center" IsVisible="False" />
-                    <Slider Grid.Column="4" Name="VolumeSlider" Minimum="0" Maximum="1" Width="72" VerticalAlignment="Center" IsVisible="False" />
                 </Grid>
             </StackPanel>
         </Grid>

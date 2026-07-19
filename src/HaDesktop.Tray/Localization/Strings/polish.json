@@ -35,6 +35,7 @@
   "Media.Power": "Zasilanie",
   "Media.Shuffle": "Losowo",
   "Media.Repeat": "Powtarzanie",
+  "Media.Volume": "Głośność",
   "Media.Off": "Wyłączony",
 
   "Light.Brightness": "Jasność: {0}%",

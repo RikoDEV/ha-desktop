@@ -35,6 +35,7 @@
   "Media.Power": "Alimentation",
   "Media.Shuffle": "Lecture aléatoire",
   "Media.Repeat": "Répéter",
+  "Media.Volume": "Volume",
   "Media.Off": "Éteint",
 
   "Light.Brightness": "Luminosité : {0} %",
