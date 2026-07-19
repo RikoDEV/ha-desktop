@@ -12,6 +12,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using HaDesktop.Core.Ha;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -110,7 +111,7 @@ public partial class MediaPlayerWidget : UserControl
 
         var title = state.Attributes.TryGetValue("media_title", out var t) && t is string ts && !string.IsNullOrEmpty(ts)
             ? ts
-            : isOff ? "Off" : HaEntityDisplay.LabelFor(state);
+            : isOff ? Loc.Instance.Tr("Media.Off") : HaEntityDisplay.LabelFor(state);
         var artist = state.Attributes.TryGetValue("media_artist", out var a) && a is string artistText && !string.IsNullOrEmpty(artistText)
             ? artistText
             : state.Attributes.TryGetValue("app_name", out var app) ? app?.ToString() : null;

@@ -1,22 +1,23 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:HaDesktop.Tray.Localization"
         x:Class="HaDesktop.Tray.EntityPickerWindow"
-        Title="HA Desktop — Choose Tiles"
+        Title="{loc:Tr Picker.WindowTitle}"
         Width="380" Height="480"
         WindowStartupLocation="CenterScreen">
 
     <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16" >
-        <TextBlock Grid.Row="0" Text="Choose Tiles" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <TextBlock Grid.Row="0" Text="{loc:Tr Picker.Header}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" />
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
-            <TextBox Name="SearchBox" Watermark="Search entities…" Width="220" TextChanged="OnSearchChanged" />
+            <TextBox Name="SearchBox" Watermark="{loc:Tr Picker.SearchWatermark}" Width="220" TextChanged="OnSearchChanged" />
             <ComboBox Name="DomainFilterBox" Width="120" SelectionChanged="OnDomainFilterChanged">
-                <ComboBoxItem Content="All types" Tag="" />
-                <ComboBoxItem Content="Lights" Tag="light" />
-                <ComboBoxItem Content="Switches" Tag="switch" />
-                <ComboBoxItem Content="Covers" Tag="cover" />
-                <ComboBoxItem Content="Sensors" Tag="sensor" />
-                <ComboBoxItem Content="Cameras" Tag="camera" />
+                <ComboBoxItem Content="{loc:Tr Picker.AllTypes}" Tag="" />
+                <ComboBoxItem Content="{loc:Tr Picker.Lights}" Tag="light" />
+                <ComboBoxItem Content="{loc:Tr Picker.Switches}" Tag="switch" />
+                <ComboBoxItem Content="{loc:Tr Picker.Covers}" Tag="cover" />
+                <ComboBoxItem Content="{loc:Tr Picker.Sensors}" Tag="sensor" />
+                <ComboBoxItem Content="{loc:Tr Picker.Cameras}" Tag="camera" />
             </ComboBox>
         </StackPanel>
 
@@ -26,7 +27,7 @@
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,12,0,0">
             <TextBlock Name="StatusText" VerticalAlignment="Center" FontSize="12" Opacity="0.7" />
-            <Button Name="SaveButton" Content="Save" Click="OnSaveClicked" Classes="accent" />
+            <Button Name="SaveButton" Content="{loc:Tr Picker.Save}" Click="OnSaveClicked" Classes="accent" />
         </StackPanel>
     </Grid>
 </Window>

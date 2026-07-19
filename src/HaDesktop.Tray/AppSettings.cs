@@ -8,6 +8,7 @@ using HaDesktop.Core.Ha;
 using HaDesktop.Core.Notifications;
 using HaDesktop.Core.Sensors;
 using HaDesktop.Core.Storage;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -30,6 +31,7 @@ public static class AppSettings
     public static MediaPlayerPreferences MediaPlayerPrefs { get; private set; } = MediaPlayerPreferences.Default;
     public static MobileAppRegistration? Registration { get; private set; }
     public static bool NotificationsEnabled { get; private set; } = true;
+    public static AppLanguage Language => Loc.Instance.Current;
 
     /// <summary>Most recent notifications received via HA's Local Push channel, newest first. In-memory only, capped at 10.</summary>
     public static List<NotificationHistoryEntry> RecentNotifications { get; } = new();
@@ -41,7 +43,7 @@ public static class AppSettings
     public static event Action? NotificationHistoryChanged;
 
     public static Task SendTestNotificationAsync() =>
-        NativeNotifier.Current.ShowAsync("HA Desktop", "This is a test notification.");
+        NativeNotifier.Current.ShowAsync(Loc.Instance.Tr("Notification.TestTitle"), Loc.Instance.Tr("Notification.TestBody"));
 
     public static async Task LoadLocalPreferencesAsync()
     {
@@ -52,6 +54,15 @@ public static class AppSettings
         MediaPlayerPrefs = await MediaPlayerPreferencesStore.LoadAsync();
         Registration = await MobileAppRegistrationStore.LoadAsync();
         NotificationsEnabled = await NotificationPreferencesStore.LoadAsync();
+
+        var languagePrefs = await LanguagePreferencesStore.LoadAsync();
+        Loc.Instance.SetLanguage(languagePrefs.Language);
+    }
+
+    public static async Task SetLanguageAsync(AppLanguage language)
+    {
+        Loc.Instance.SetLanguage(language);
+        await LanguagePreferencesStore.SaveAsync(new LanguagePreferences(language));
     }
 
     public static async Task SetNotificationsEnabledAsync(bool enabled)

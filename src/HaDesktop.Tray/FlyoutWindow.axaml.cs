@@ -12,6 +12,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -55,6 +56,7 @@ public partial class FlyoutWindow : Window
         this.FindControl<PathIcon>("NotificationsIcon")!.Data = Geometry.Parse(BellIconPath);
         Deactivated += (_, _) => Hide();
         AppSettings.ConnectionChanged += OnConnectionChanged;
+        Loc.Instance.LanguageChanged += OnConnectionChanged;
         _ = RefreshTilesAsync();
     }
 
@@ -94,7 +96,7 @@ public partial class FlyoutWindow : Window
             _lastKnownStates.Clear();
             HideWeatherWidget();
             HideMediaPlayerWidget();
-            list.Items.Add(BuildEmptyState("🔌", "Not connected", "Connect to Home Assistant to see your devices here.", showSettingsButton: true));
+            list.Items.Add(BuildEmptyState("🔌", Loc.Instance.Tr("Flyout.NotConnectedTitle"), Loc.Instance.Tr("Flyout.NotConnectedSubtitle"), showSettingsButton: true));
             return;
         }
 
@@ -118,7 +120,7 @@ public partial class FlyoutWindow : Window
             _lastKnownStates.Clear();
             HideWeatherWidget();
             HideMediaPlayerWidget();
-            list.Items.Add(BuildEmptyState("⚠", "Couldn't load entities", "The connection to Home Assistant dropped. Check Settings.", showSettingsButton: true));
+            list.Items.Add(BuildEmptyState("⚠", Loc.Instance.Tr("Flyout.ConnectionErrorTitle"), Loc.Instance.Tr("Flyout.ConnectionErrorSubtitle"), showSettingsButton: true));
             return;
         }
 
@@ -156,7 +158,7 @@ public partial class FlyoutWindow : Window
         }
 
         if (list.Items.Count == 0)
-            list.Items.Add(BuildEmptyState("🏠", "No entities yet", "No light, switch, or cover entities were found in Home Assistant.", showSettingsButton: false));
+            list.Items.Add(BuildEmptyState("🏠", Loc.Instance.Tr("Flyout.NoEntitiesTitle"), Loc.Instance.Tr("Flyout.NoEntitiesSubtitle"), showSettingsButton: false));
     }
 
     private Control BuildToggleTile(HaEntityState state, TileConfig config, HaClient client)
@@ -343,7 +345,7 @@ public partial class FlyoutWindow : Window
         {
             var button = new Button
             {
-                Content = "Open Settings",
+                Content = Loc.Instance.Tr("Flyout.OpenSettings"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 8, 0, 0),
                 Classes = { "accent" },

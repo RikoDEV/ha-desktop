@@ -9,6 +9,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -44,7 +45,7 @@ public partial class EntityPickerWindow : Window
 
         if (client is null)
         {
-            status.Text = "Not connected.";
+            status.Text = Loc.Instance.Tr("Picker.NotConnected");
             return;
         }
 
@@ -55,7 +56,7 @@ public partial class EntityPickerWindow : Window
         }
         catch (Exception ex)
         {
-            status.Text = $"Couldn't load entities: {ex.Message}";
+            status.Text = Loc.Instance.Tr("Picker.LoadError", ex.Message);
             return;
         }
 
@@ -85,7 +86,7 @@ public partial class EntityPickerWindow : Window
             panel.Children.Add(checkBox);
         }
 
-        status.Text = $"{_rows.Count} entities";
+        status.Text = Loc.Instance.Tr("Picker.EntityCount", _rows.Count);
     }
 
     private void OnSearchChanged(object? sender, TextChangedEventArgs e) => ApplyFilter();

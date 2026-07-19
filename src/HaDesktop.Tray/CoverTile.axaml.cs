@@ -4,6 +4,7 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using HaDesktop.Core.Ha;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -62,14 +63,14 @@ public partial class CoverTile : UserControl
 
     private static string StatusTextFor(HaEntityState state) => state.State switch
     {
-        "opening" => "Opening…",
-        "closing" => "Closing…",
+        "opening" => Loc.Instance.Tr("Cover.StatusOpening"),
+        "closing" => Loc.Instance.Tr("Cover.StatusClosing"),
         "open" => state.Attributes.TryGetValue("current_position", out var p) && p is not null
-            ? $"Open · {Convert.ToInt32(p)}%"
-            : "Open",
-        "closed" => "Closed",
-        "unavailable" => "Unavailable",
-        _ => "Unknown",
+            ? Loc.Instance.Tr("Cover.StatusOpenAt", Convert.ToInt32(p))
+            : Loc.Instance.Tr("Cover.StatusOpen"),
+        "closed" => Loc.Instance.Tr("Cover.StatusClosed"),
+        "unavailable" => Loc.Instance.Tr("Cover.StatusUnavailable"),
+        _ => Loc.Instance.Tr("Cover.StatusUnknown"),
     };
 
     public void SetCornerRadius(double radius) =>

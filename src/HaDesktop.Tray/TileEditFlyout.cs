@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -51,7 +52,7 @@ public static class TileEditFlyout
 
         Flyout? flyout = null;
 
-        var saveButton = new Button { Content = "Save", Classes = { "accent" } };
+        var saveButton = new Button { Content = Loc.Instance.Tr("TileEdit.Save"), Classes = { "accent" } };
         saveButton.Click += async (_, _) =>
         {
             var label = string.IsNullOrWhiteSpace(labelBox.Text) ? null : labelBox.Text.Trim();
@@ -59,7 +60,7 @@ public static class TileEditFlyout
             flyout?.Hide();
         };
 
-        var resetButton = new Button { Content = "Reset to Default" };
+        var resetButton = new Button { Content = Loc.Instance.Tr("TileEdit.ResetToDefault") };
         resetButton.Click += async (_, _) =>
         {
             await onSave(null, null);
@@ -67,9 +68,9 @@ public static class TileEditFlyout
         };
 
         var content = new StackPanel { Spacing = 6, Margin = new Avalonia.Thickness(12), Width = 256 };
-        content.Children.Add(new TextBlock { Text = "Custom Name", FontSize = 12, Opacity = 0.7 });
+        content.Children.Add(new TextBlock { Text = Loc.Instance.Tr("TileEdit.CustomName"), FontSize = 12, Opacity = 0.7 });
         content.Children.Add(labelBox);
-        content.Children.Add(new TextBlock { Text = "Icon", FontSize = 12, Opacity = 0.7, Margin = new Avalonia.Thickness(0, 4, 0, 0) });
+        content.Children.Add(new TextBlock { Text = Loc.Instance.Tr("TileEdit.Icon"), FontSize = 12, Opacity = 0.7, Margin = new Avalonia.Thickness(0, 4, 0, 0) });
         content.Children.Add(iconRow);
         content.Children.Add(new StackPanel
         {

@@ -1,8 +1,10 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="using:FluentAvalonia.UI.Controls"
+        xmlns:loc="using:HaDesktop.Tray.Localization"
         x:Class="HaDesktop.Tray.SettingsWindow"
-        Title="HA Desktop — Settings"
+        Title="{loc:Tr Settings.WindowTitle}"
+        Icon="avares://HaDesktop.Tray/Assets/tray-icon.ico"
         Width="820" Height="640"
         CanResize="True"
         MinWidth="680" MinHeight="480"
@@ -12,15 +14,15 @@
     <Grid ColumnDefinitions="220,*">
         <Border Grid.Column="0" Background="{DynamicResource LayerFillColorDefaultBrush}" Padding="12,20">
             <StackPanel Spacing="4">
-                <TextBlock Text="Settings" FontSize="20" FontWeight="SemiBold" Margin="8,0,8,16" />
+                <TextBlock Text="{loc:Tr Tray.Settings}" FontSize="20" FontWeight="SemiBold" Margin="8,0,8,16" />
                 <ListBox Name="NavList" SelectionChanged="OnNavSelectionChanged" Background="Transparent">
-                    <ListBoxItem Content="Connection" />
-                    <ListBoxItem Content="Tiles &amp; Widgets" />
-                    <ListBoxItem Content="Appearance" />
-                    <ListBoxItem Content="Sensor Sharing" />
-                    <ListBoxItem Content="System" />
-                    <ListBoxItem Content="Notifications" />
-                    <ListBoxItem Content="About" />
+                    <ListBoxItem Content="{loc:Tr Nav.Connection}" />
+                    <ListBoxItem Content="{loc:Tr Nav.Tiles}" />
+                    <ListBoxItem Content="{loc:Tr Nav.Appearance}" />
+                    <ListBoxItem Content="{loc:Tr Nav.Sensors}" />
+                    <ListBoxItem Content="{loc:Tr Nav.System}" />
+                    <ListBoxItem Content="{loc:Tr Nav.Notifications}" />
+                    <ListBoxItem Content="{loc:Tr Nav.About}" />
                 </ListBox>
             </StackPanel>
         </Border>
@@ -29,7 +31,7 @@
             <Grid Margin="28,24,28,24">
                 <!-- Connection: dynamic (signed-in vs signed-out), so it's a plain card rather than a SettingsExpander. -->
                 <StackPanel Name="ConnectionPage" Spacing="4">
-                    <TextBlock Text="Home Assistant Connection" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="{loc:Tr Connection.Header}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
                     <Border CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" Padding="16">
                         <StackPanel Spacing="8">
@@ -39,22 +41,22 @@
                                     <TextBlock Name="ConnectedUrlText" VerticalAlignment="Center" FontSize="13" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                    <Button Name="SwitchInstanceButton" Content="Connect to a Different Instance…" Click="OnSwitchInstanceClicked" />
-                                    <Button Name="SignOutButton" Content="Sign Out" Click="OnSignOutClicked" />
+                                    <Button Name="SwitchInstanceButton" Content="{loc:Tr Connection.SwitchInstance}" Click="OnSwitchInstanceClicked" />
+                                    <Button Name="SignOutButton" Content="{loc:Tr Connection.SignOut}" Click="OnSignOutClicked" />
                                 </StackPanel>
                             </StackPanel>
 
                             <StackPanel Name="SignInPanel" Spacing="8">
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="Home Assistant URL" FontSize="12" Opacity="0.7" />
+                                    <TextBlock Text="{loc:Tr Connection.UrlLabel}" FontSize="12" Opacity="0.7" />
                                     <TextBox Name="BaseUrlBox" Watermark="http://homeassistant.local:8123" />
                                 </StackPanel>
 
                                 <TextBlock Name="StatusText" FontSize="12" TextWrapping="Wrap" />
 
                                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                    <Button Name="CancelSwitchButton" Content="Cancel" Click="OnCancelSwitchClicked" IsVisible="False" />
-                                    <Button Name="LoginButton" Content="Sign in with Home Assistant" Click="OnLoginClicked" Classes="accent" />
+                                    <Button Name="CancelSwitchButton" Content="{loc:Tr Connection.Cancel}" Click="OnCancelSwitchClicked" IsVisible="False" />
+                                    <Button Name="LoginButton" Content="{loc:Tr Connection.SignIn}" Click="OnLoginClicked" Classes="accent" />
                                 </StackPanel>
                             </StackPanel>
                         </StackPanel>
@@ -64,7 +66,7 @@
                             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" Padding="16"
                             Margin="0,12,0,0" IsVisible="False">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="Home Assistant Instance" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="{loc:Tr Connection.InstanceHeader}" FontSize="14" FontWeight="SemiBold" />
                             <StackPanel Name="InstanceInfoPanel" Spacing="6" />
                         </StackPanel>
                     </Border>
@@ -73,76 +75,76 @@
                             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" Padding="16"
                             Margin="0,12,0,0" IsVisible="False">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="Home Assistant Updates" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="{loc:Tr Connection.UpdatesHeader}" FontSize="14" FontWeight="SemiBold" />
                             <StackPanel Name="UpdatesPanel" Spacing="6" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
 
                 <StackPanel Name="TilesPage" Spacing="4" IsVisible="False">
-                    <TextBlock Text="Tiles &amp; Widgets" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="{loc:Tr Tiles.Header}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-                    <ui:SettingsExpander Header="Quick Settings Tiles"
-                                          Description="Choose which entities appear as tiles in the tray flyout."
+                    <ui:SettingsExpander Header="{loc:Tr Tiles.QuickTilesHeader}"
+                                          Description="{loc:Tr Tiles.QuickTilesDescription}"
                                           IsExpanded="True">
                         <ui:SettingsExpander.Footer>
-                            <Button Name="ChooseTilesButton" Content="Choose Tiles…" Click="OnChooseTilesClicked" />
+                            <Button Name="ChooseTilesButton" Content="{loc:Tr Tiles.ChooseTiles}" Click="OnChooseTilesClicked" />
                         </ui:SettingsExpander.Footer>
                         <ui:SettingsExpander.Items>
                             <StackPanel Name="SelectedTilesPanel" Spacing="6" Margin="16,8" />
                         </ui:SettingsExpander.Items>
                     </ui:SettingsExpander>
 
-                    <ui:SettingsExpander Header="Weather Widget"
-                                          Description="Uses your existing weather integration in Home Assistant — no external weather service is contacted."
+                    <ui:SettingsExpander Header="{loc:Tr Tiles.WeatherHeader}"
+                                          Description="{loc:Tr Tiles.WeatherDescription}"
                                           IsExpanded="True" Margin="0,8,0,0">
                         <ui:SettingsExpander.Footer>
                             <ToggleSwitch Name="WeatherEnabledCheckBox" OnContent="" OffContent="" Click="OnWeatherEnabledChanged" />
                         </ui:SettingsExpander.Footer>
                         <ui:SettingsExpander.Items>
                             <StackPanel Spacing="4" Margin="16,8">
-                                <TextBlock Text="Weather Entity" FontSize="12" Opacity="0.7" />
+                                <TextBlock Text="{loc:Tr Tiles.WeatherEntityLabel}" FontSize="12" Opacity="0.7" />
                                 <ComboBox Name="WeatherEntityBox" Width="280" SelectionChanged="OnWeatherEntityChanged" />
                             </StackPanel>
                             <Grid ColumnDefinitions="*,Auto" Margin="16,8">
-                                <TextBlock Grid.Column="0" Text="Condition Background" FontSize="13" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="0" Text="{loc:Tr Tiles.ConditionBackground}" FontSize="13" VerticalAlignment="Center" />
                                 <ToggleSwitch Grid.Column="1" Name="WeatherBackgroundCheckBox" OnContent="" OffContent="" Click="OnWeatherOptionChanged" VerticalAlignment="Center" />
                             </Grid>
                             <Grid ColumnDefinitions="*,Auto" Margin="16,8">
-                                <TextBlock Grid.Column="0" Text="Show Wind &amp; Humidity" FontSize="13" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="0" Text="{loc:Tr Tiles.ShowWindHumidity}" FontSize="13" VerticalAlignment="Center" />
                                 <ToggleSwitch Grid.Column="1" Name="WeatherWindHumidityCheckBox" OnContent="" OffContent="" Click="OnWeatherOptionChanged" VerticalAlignment="Center" />
                             </Grid>
                             <Grid ColumnDefinitions="*,Auto" Margin="16,8">
-                                <TextBlock Grid.Column="0" Text="Show Forecast" FontSize="13" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="0" Text="{loc:Tr Tiles.ShowForecast}" FontSize="13" VerticalAlignment="Center" />
                                 <ToggleSwitch Grid.Column="1" Name="WeatherForecastCheckBox" OnContent="" OffContent="" Click="OnWeatherOptionChanged" VerticalAlignment="Center" />
                             </Grid>
                             <StackPanel Spacing="4" Margin="16,8">
-                                <TextBlock Text="Forecast Days" FontSize="12" Opacity="0.7" />
+                                <TextBlock Text="{loc:Tr Tiles.ForecastDaysLabel}" FontSize="12" Opacity="0.7" />
                                 <ComboBox Name="WeatherForecastDaysBox" Width="120" SelectionChanged="OnWeatherForecastDaysChanged">
-                                    <ComboBoxItem Content="3 days" Tag="3" />
-                                    <ComboBoxItem Content="4 days" Tag="4" />
-                                    <ComboBoxItem Content="5 days" Tag="5" />
-                                    <ComboBoxItem Content="7 days" Tag="7" />
+                                    <ComboBoxItem Content="{loc:Tr Tiles.ForecastDays3}" Tag="3" />
+                                    <ComboBoxItem Content="{loc:Tr Tiles.ForecastDays4}" Tag="4" />
+                                    <ComboBoxItem Content="{loc:Tr Tiles.ForecastDays5}" Tag="5" />
+                                    <ComboBoxItem Content="{loc:Tr Tiles.ForecastDays7}" Tag="7" />
                                 </ComboBox>
                             </StackPanel>
                         </ui:SettingsExpander.Items>
                     </ui:SettingsExpander>
 
-                    <ui:SettingsExpander Header="Media Player"
-                                          Description="Shows now-playing info and playback controls below the weather widget. Picks the active player automatically unless you choose one below."
+                    <ui:SettingsExpander Header="{loc:Tr Tiles.MediaHeader}"
+                                          Description="{loc:Tr Tiles.MediaDescription}"
                                           IsExpanded="True" Margin="0,8,0,0">
                         <ui:SettingsExpander.Footer>
                             <ToggleSwitch Name="MediaPlayerEnabledCheckBox" OnContent="" OffContent="" Click="OnMediaPlayerEnabledChanged" />
                         </ui:SettingsExpander.Footer>
                         <ui:SettingsExpander.Items>
                             <StackPanel Spacing="4" Margin="16,8">
-                                <TextBlock Text="Media Player Entity" FontSize="12" Opacity="0.7" />
+                                <TextBlock Text="{loc:Tr Tiles.MediaEntityLabel}" FontSize="12" Opacity="0.7" />
                                 <ComboBox Name="MediaPlayerEntityBox" Width="280" SelectionChanged="OnMediaPlayerEntityChanged" />
                             </StackPanel>
                             <Grid ColumnDefinitions="*,Auto" Margin="16,8">
                                 <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="Blurred Album Art Background" FontSize="13" />
-                                    <TextBlock Text="Uses the current track's cover art as a blurred backdrop for the card." FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                                    <TextBlock Text="{loc:Tr Tiles.MediaBackgroundTitle}" FontSize="13" />
+                                    <TextBlock Text="{loc:Tr Tiles.MediaBackgroundDescription}" FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <ToggleSwitch Grid.Column="1" Name="MediaPlayerBackgroundCheckBox" OnContent="" OffContent="" Click="OnMediaPlayerBackgroundChanged" VerticalAlignment="Center" />
                             </Grid>
@@ -151,18 +153,18 @@
                 </StackPanel>
 
                 <StackPanel Name="AppearancePage" Spacing="4" IsVisible="False">
-                    <TextBlock Text="Appearance" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="{loc:Tr Appearance.Header}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-                    <ui:SettingsExpander Header="Tiles"
-                                          Description="How tiles are shaped in the flyout."
+                    <ui:SettingsExpander Header="{loc:Tr Appearance.TilesHeader}"
+                                          Description="{loc:Tr Appearance.TilesDescription}"
                                           IsExpanded="True">
                         <ui:SettingsExpander.Items>
                             <StackPanel Spacing="4" Margin="16,8">
-                                <TextBlock Text="Tile Shape" FontSize="12" Opacity="0.7" />
+                                <TextBlock Text="{loc:Tr Appearance.TileShape}" FontSize="12" Opacity="0.7" />
                                 <StackPanel Orientation="Horizontal" Spacing="16">
-                                    <RadioButton Name="ShapeRoundedRadio" GroupName="TileShape" Content="Rounded" Checked="OnTileShapeChanged" />
-                                    <RadioButton Name="ShapeSquareRadio" GroupName="TileShape" Content="Square" Checked="OnTileShapeChanged" />
-                                    <RadioButton Name="ShapePillRadio" GroupName="TileShape" Content="Pill" Checked="OnTileShapeChanged" />
+                                    <RadioButton Name="ShapeRoundedRadio" GroupName="TileShape" Content="{loc:Tr Appearance.Rounded}" Checked="OnTileShapeChanged" />
+                                    <RadioButton Name="ShapeSquareRadio" GroupName="TileShape" Content="{loc:Tr Appearance.Square}" Checked="OnTileShapeChanged" />
+                                    <RadioButton Name="ShapePillRadio" GroupName="TileShape" Content="{loc:Tr Appearance.Pill}" Checked="OnTileShapeChanged" />
                                 </StackPanel>
                             </StackPanel>
                         </ui:SettingsExpander.Items>
@@ -170,10 +172,10 @@
                 </StackPanel>
 
                 <StackPanel Name="SensorsPage" Spacing="4" IsVisible="False">
-                    <TextBlock Text="Sensor Sharing" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="{loc:Tr Sensors.Header}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-                    <ui:SettingsExpander Header="Share This PC's Sensors"
-                                          Description="Off by default. Updates every 30s."
+                    <ui:SettingsExpander Header="{loc:Tr Sensors.ShareHeader}"
+                                          Description="{loc:Tr Sensors.ShareDescription}"
                                           IsExpanded="True">
                         <ui:SettingsExpander.Footer>
                             <ToggleSwitch Name="SensorSharingMasterCheckBox" OnContent="" OffContent="" Click="OnSensorSharingMasterChanged" />
@@ -181,46 +183,46 @@
                         <ui:SettingsExpander.Items>
                             <StackPanel Spacing="12" Margin="16,8">
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="Device Name" FontSize="12" Opacity="0.7" />
+                                    <TextBlock Text="{loc:Tr Sensors.DeviceName}" FontSize="12" Opacity="0.7" />
                                     <TextBox Name="DeviceNameBox" Watermark="HA Desktop" LostFocus="OnDeviceNameLostFocus" />
                                     <TextBlock Name="DeviceSlugPreview" FontSize="11" Opacity="0.6" />
                                 </StackPanel>
 
                                 <StackPanel Spacing="8">
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="CPU usage" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.CpuUsage}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareCpuCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="Memory usage" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.MemoryUsage}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareMemoryCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="Battery level" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Battery}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareBatteryCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="Disk usage" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.DiskUsage}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareDiskCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="System uptime" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Uptime}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareUptimeCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="Active window title" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.ActiveWindow}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareActiveWindowCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
-                                    <TextBlock Text="Active window title reveals what you're looking at (app names, document/page titles) — Windows only for now."
+                                    <TextBlock Text="{loc:Tr Sensors.ActiveWindowNote}"
                                                 FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="GPU usage" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Gpu}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareGpuCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
-                                    <TextBlock Text="NVIDIA (nvidia-smi), AMD on Windows (GPU Engine counters) and Linux (amdgpu driver). Intel GPUs and macOS aren't supported."
+                                    <TextBlock Text="{loc:Tr Sensors.GpuNote}"
                                                 FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="Network throughput" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Network}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareNetworkCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
                                 </StackPanel>
@@ -230,20 +232,37 @@
                 </StackPanel>
 
                 <StackPanel Name="SystemPage" Spacing="4" IsVisible="False">
-                    <TextBlock Text="System" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="{loc:Tr System.Header}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-                    <ui:SettingsExpander Header="Startup" Description="Start HA Desktop automatically when I log in.">
+                    <ui:SettingsExpander Header="{loc:Tr System.StartupHeader}" Description="{loc:Tr System.StartupDescription}">
                         <ui:SettingsExpander.Footer>
                             <ToggleSwitch Name="AutostartCheckBox" OnContent="" OffContent="" Click="OnAutostartChanged" />
                         </ui:SettingsExpander.Footer>
                     </ui:SettingsExpander>
+
+                    <ui:SettingsExpander Header="{loc:Tr Language.Header}"
+                                          Description="{loc:Tr Language.Description}"
+                                          IsExpanded="True" Margin="0,8,0,0">
+                        <ui:SettingsExpander.Items>
+                            <StackPanel Spacing="4" Margin="16,8">
+                                <TextBlock Text="{loc:Tr Language.Label}" FontSize="12" Opacity="0.7" />
+                                <ComboBox Name="LanguageBox" Width="220" SelectionChanged="OnLanguageChanged">
+                                    <ComboBoxItem Content="{loc:Tr Language.NameEnglish}" Tag="English" />
+                                    <ComboBoxItem Content="{loc:Tr Language.NamePolish}" Tag="Polish" />
+                                    <ComboBoxItem Content="{loc:Tr Language.NameGerman}" Tag="German" />
+                                    <ComboBoxItem Content="{loc:Tr Language.NameFrench}" Tag="French" />
+                                    <ComboBoxItem Content="{loc:Tr Language.NameRussian}" Tag="Russian" />
+                                </ComboBox>
+                            </StackPanel>
+                        </ui:SettingsExpander.Items>
+                    </ui:SettingsExpander>
                 </StackPanel>
 
                 <StackPanel Name="NotificationsPage" Spacing="4" IsVisible="False">
-                    <TextBlock Text="Notifications" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="{loc:Tr Notifications.Header}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-                    <ui:SettingsExpander Header="Push Notifications"
-                                          Description="Show notifications sent from Home Assistant as native desktop notifications, delivered locally over the WebSocket connection (no cloud/FCM required)."
+                    <ui:SettingsExpander Header="{loc:Tr Notifications.PushHeader}"
+                                          Description="{loc:Tr Notifications.PushDescription}"
                                           IsExpanded="True">
                         <ui:SettingsExpander.Footer>
                             <ToggleSwitch Name="NotificationsCheckBox" OnContent="" OffContent="" Click="OnNotificationsChanged" />
@@ -251,14 +270,14 @@
                         <ui:SettingsExpander.Items>
                             <StackPanel Spacing="8" Margin="16,8">
                                 <TextBlock Name="NotifyServiceText" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
-                                <Button Name="TestNotificationButton" Content="Send Test Notification" Click="OnTestNotificationClicked" HorizontalAlignment="Left" />
+                                <Button Name="TestNotificationButton" Content="{loc:Tr Notifications.SendTest}" Click="OnTestNotificationClicked" HorizontalAlignment="Left" />
                             </StackPanel>
                         </ui:SettingsExpander.Items>
                     </ui:SettingsExpander>
                 </StackPanel>
 
                 <StackPanel Name="AboutPage" Spacing="4" IsVisible="False">
-                    <TextBlock Text="About" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="{loc:Tr About.Header}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
 
                     <Border CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" Padding="20">
@@ -269,15 +288,19 @@
                                 </Border>
                                 <StackPanel VerticalAlignment="Center" Spacing="0">
                                     <TextBlock Text="HA Desktop" FontSize="16" FontWeight="SemiBold" />
-                                    <TextBlock Name="AboutVersionText" FontSize="12" Opacity="0.7" />
                                 </StackPanel>
                             </StackPanel>
 
-                            <TextBlock Text="A lightweight, cross-platform desktop companion for Home Assistant — quick-toggle tiles, sensor sharing, and a weather widget, all running natively with no webview."
+                            <TextBlock Text="{loc:Tr About.Description}"
                                        TextWrapping="Wrap" FontSize="13" Opacity="0.85" />
 
                             <StackPanel Spacing="4">
-                                <TextBlock Text="Author" FontSize="12" Opacity="0.7" />
+                                <TextBlock Text="{loc:Tr About.Version}" FontSize="12" Opacity="0.7" />
+                                <TextBlock Name="AboutVersionText" FontSize="13" />
+                            </StackPanel>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{loc:Tr About.Author}" FontSize="12" Opacity="0.7" />
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <TextBlock Text="RikoDEV —" VerticalAlignment="Center" FontSize="13" />
                                     <Button Name="AuthorLinkButton" Content="https://riko.dev" Click="OnAuthorLinkClicked"
@@ -287,7 +310,14 @@
                             </StackPanel>
 
                             <StackPanel Spacing="4">
-                                <TextBlock Text="Built With" FontSize="12" Opacity="0.7" />
+                                <TextBlock Text="{loc:Tr About.GitHub}" FontSize="12" Opacity="0.7" />
+                                <Button Name="GitHubLinkButton" Content="https://github.com/RikoDEV/ha-desktop" Click="OnGitHubLinkClicked"
+                                        Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                                        Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                            </StackPanel>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{loc:Tr About.BuiltWith}" FontSize="12" Opacity="0.7" />
                                 <TextBlock Text="Avalonia UI + FluentAvaloniaUI · .NET" FontSize="13" />
                             </StackPanel>
                         </StackPanel>

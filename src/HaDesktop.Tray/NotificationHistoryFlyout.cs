@@ -3,6 +3,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -12,13 +13,13 @@ public static class NotificationHistoryFlyout
     public static void Show(Control anchor, IReadOnlyList<NotificationHistoryEntry> entries)
     {
         var content = new StackPanel { Spacing = 8, Margin = new Avalonia.Thickness(12), Width = 260 };
-        content.Children.Add(new TextBlock { Text = "Recent Notifications", FontSize = 13, FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        content.Children.Add(new TextBlock { Text = Loc.Instance.Tr("NotificationHistory.Title"), FontSize = 13, FontWeight = Avalonia.Media.FontWeight.SemiBold });
 
         if (entries.Count == 0)
         {
             content.Children.Add(new TextBlock
             {
-                Text = "No notifications yet.",
+                Text = Loc.Instance.Tr("NotificationHistory.Empty"),
                 FontSize = 12,
                 Opacity = 0.6,
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap,

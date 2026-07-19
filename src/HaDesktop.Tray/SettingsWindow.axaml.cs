@@ -13,6 +13,7 @@ using HaDesktop.Core.Autostart;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Sensors;
 using HaDesktop.Core.Storage;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -27,6 +28,7 @@ public partial class SettingsWindow : Window
         UpdateConnectionUi();
         LoadSensorUi();
         LoadAppearanceUi();
+        LoadLanguageUi();
         LoadAboutUi();
         LoadNotificationsUi();
         _ = LoadAutostartStateAsync();
@@ -39,7 +41,12 @@ public partial class SettingsWindow : Window
         this.FindControl<ListBox>("NavList")!.SelectedIndex = 0;
 
         AppSettings.ConnectionChanged += OnConnectionChanged;
-        Closed += (_, _) => AppSettings.ConnectionChanged -= OnConnectionChanged;
+        Loc.Instance.LanguageChanged += OnLanguageChangedRefresh;
+        Closed += (_, _) =>
+        {
+            AppSettings.ConnectionChanged -= OnConnectionChanged;
+            Loc.Instance.LanguageChanged -= OnLanguageChangedRefresh;
+        };
         _ = RefreshSelectedTilesAsync();
         _ = RefreshUpdatesThenInstanceInfoAsync();
     }
@@ -60,7 +67,7 @@ public partial class SettingsWindow : Window
         this.FindControl<PathIcon>("AboutAppIcon")!.Data = Geometry.Parse(TileIcons.PathFor("cover"));
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        this.FindControl<TextBlock>("AboutVersionText")!.Text = version is null ? "Development build" : $"Version {version.ToString(3)}";
+        this.FindControl<TextBlock>("AboutVersionText")!.Text = version is null ? Loc.Instance.Tr("About.DevelopmentBuild") : version.ToString(3);
     }
 
     private void OnAuthorLinkClicked(object? sender, RoutedEventArgs e)
@@ -68,6 +75,15 @@ public partial class SettingsWindow : Window
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://riko.dev") { UseShellExecute = true });
+        }
+        catch { /* best effort — no default browser handler, nothing sensible to do */ }
+    }
+
+    private void OnGitHubLinkClicked(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/RikoDEV/ha-desktop") { UseShellExecute = true });
         }
         catch { /* best effort — no default browser handler, nothing sensible to do */ }
     }
@@ -82,6 +98,22 @@ public partial class SettingsWindow : Window
     private void OnConnectionChanged() => Dispatcher.UIThread.Post(() =>
     {
         UpdateConnectionUi();
+        _ = RefreshSelectedTilesAsync();
+        _ = RefreshUpdatesThenInstanceInfoAsync();
+    });
+
+    /// <summary>
+    /// Refreshes the dynamic (code-behind-set) text that a language switch doesn't otherwise touch —
+    /// XAML-bound static labels refresh on their own via the {loc:Tr} indexer binding, but text built
+    /// with string interpolation (connection status, device slug preview, tile tooltips, etc.) needs
+    /// to be regenerated in the new language explicitly.
+    /// </summary>
+    private void OnLanguageChangedRefresh() => Dispatcher.UIThread.Post(() =>
+    {
+        UpdateConnectionUi();
+        LoadAboutUi();
+        LoadNotificationsUi();
+        UpdateDeviceSlugPreview(this.FindControl<TextBox>("DeviceNameBox")!.Text?.Trim() is { Length: > 0 } name ? name : AppSettings.SensorPrefs.DeviceName);
         _ = RefreshSelectedTilesAsync();
         _ = RefreshUpdatesThenInstanceInfoAsync();
     });
@@ -124,7 +156,7 @@ public partial class SettingsWindow : Window
 
         if (pending.Count == 0)
         {
-            panel.Children.Add(new TextBlock { Text = "No updates available.", FontSize = 12, Opacity = 0.7 });
+            panel.Children.Add(new TextBlock { Text = Loc.Instance.Tr("Updates.None"), FontSize = 12, Opacity = 0.7 });
             return;
         }
 
@@ -139,12 +171,12 @@ public partial class SettingsWindow : Window
             textPanel.Children.Add(new TextBlock { Text = $"{installed ?? "?"} → {latest ?? "?"}", FontSize = 12, Foreground = Brushes.DarkOrange });
             row.Children.Add(textPanel);
 
-            var updateButton = new Button { Content = "Update", VerticalAlignment = VerticalAlignment.Center, [Grid.ColumnProperty] = 1 };
+            var updateButton = new Button { Content = Loc.Instance.Tr("Updates.Update"), VerticalAlignment = VerticalAlignment.Center, [Grid.ColumnProperty] = 1 };
             var entityId = update.EntityId;
             updateButton.Click += async (_, _) =>
             {
                 updateButton.IsEnabled = false;
-                updateButton.Content = "Updating…";
+                updateButton.Content = Loc.Instance.Tr("Updates.Updating");
                 try
                 {
                     await AppSettings.Client!.CallServiceAsync("update", "install", entityId);
@@ -183,7 +215,7 @@ public partial class SettingsWindow : Window
         // failing piece hid a Core version that was available instantly.
         panel.Children.Clear();
         card.IsVisible = true;
-        AddInstanceInfoRow(panel, "Core", client.HaVersion);
+        AddInstanceInfoRow(panel, Loc.Instance.Tr("Instance.Core"), client.HaVersion);
 
         HaInstanceInfo info;
         try
@@ -207,9 +239,9 @@ public partial class SettingsWindow : Window
         // Inserted above the already-shown Core row so the final order reads Installation
         // Method, Core, Supervisor, Operating System — matching HA's own About page — even
         // though Core was added first (synchronously, before this async fetch resolved).
-        AddInstanceInfoRow(panel, "Installation Method", info.InstallationType, index: 0);
-        AddInstanceInfoRow(panel, "Supervisor", info.SupervisorVersion);
-        AddInstanceInfoRow(panel, "Operating System", info.OsVersion);
+        AddInstanceInfoRow(panel, Loc.Instance.Tr("Instance.InstallationMethod"), info.InstallationType, index: 0);
+        AddInstanceInfoRow(panel, Loc.Instance.Tr("Instance.Supervisor"), info.SupervisorVersion);
+        AddInstanceInfoRow(panel, Loc.Instance.Tr("Instance.OperatingSystem"), info.OsVersion);
     }
 
     private static void AddInstanceInfoRow(StackPanel panel, string label, string? value, int? index = null)
@@ -235,7 +267,7 @@ public partial class SettingsWindow : Window
 
         if (isConnected)
         {
-            this.FindControl<TextBlock>("ConnectedUrlText")!.Text = $"Connected to {AppSettings.Credentials!.BaseUrl}";
+            this.FindControl<TextBlock>("ConnectedUrlText")!.Text = Loc.Instance.Tr("Connection.ConnectedTo", AppSettings.Credentials!.BaseUrl);
         }
         else
         {
@@ -273,7 +305,7 @@ public partial class SettingsWindow : Window
         panel.Children.Clear();
         if (tiles.Count == 0)
         {
-            panel.Children.Add(new TextBlock { Text = "No tiles chosen yet.", FontSize = 12, Opacity = 0.6 });
+            panel.Children.Add(new TextBlock { Text = Loc.Instance.Tr("Tiles.NoTilesChosen"), FontSize = 12, Opacity = 0.6 });
             return;
         }
 
@@ -296,7 +328,7 @@ public partial class SettingsWindow : Window
             row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, [Grid.ColumnProperty] = 1 });
 
             var sizeButton = NewRowActionButton(config.Size == TileSize.Wide ? "W" : "S", 2);
-            ToolTip.SetTip(sizeButton, "Toggle tile size (Small/Wide)");
+            ToolTip.SetTip(sizeButton, Loc.Instance.Tr("Tiles.ToggleSizeTooltip"));
             sizeButton.Click += async (_, _) => await AppSettings.SetTileSizeAsync(
                 config.EntityId, config.Size == TileSize.Wide ? TileSize.Small : TileSize.Wide);
             row.Children.Add(sizeButton);
@@ -312,7 +344,7 @@ public partial class SettingsWindow : Window
             row.Children.Add(downButton);
 
             var editButton = NewRowActionButton(new PathIcon { Data = Geometry.Parse(TileIcons.PathFor("pencil")), Width = 13, Height = 13 }, 5);
-            ToolTip.SetTip(editButton, "Rename or change icon");
+            ToolTip.SetTip(editButton, Loc.Instance.Tr("Tiles.RenameTooltip"));
             editButton.Click += (_, _) => TileEditFlyout.Show(
                 editButton, config.CustomLabel, config.CustomIcon, defaultLabel, defaultIconKey,
                 async (newLabel, newIcon) => await AppSettings.UpdateTileAsync(config.EntityId, newLabel, newIcon));
@@ -355,21 +387,19 @@ public partial class SettingsWindow : Window
         AvaloniaXamlLoader.Load(this);
     }
 
+    // Matches BaseUrlBox's watermark — if the user hits sign-in without typing a URL,
+    // assume the common local mDNS address rather than blocking on an empty field.
+    private const string DefaultBaseUrl = "http://homeassistant.local:8123";
+
     private async void OnLoginClicked(object? sender, RoutedEventArgs e)
     {
         var status = this.FindControl<TextBlock>("StatusText")!;
         var button = this.FindControl<Button>("LoginButton")!;
         var baseUrl = this.FindControl<TextBox>("BaseUrlBox")!.Text?.Trim();
-
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            status.Text = "Enter your Home Assistant URL first.";
-            status.Foreground = Brushes.OrangeRed;
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(baseUrl)) baseUrl = DefaultBaseUrl;
 
         button.IsEnabled = false;
-        status.Text = "Opening your browser to sign in…";
+        status.Text = Loc.Instance.Tr("Connection.OpeningBrowser");
         status.Foreground = Brushes.Gray;
 
         try
@@ -377,19 +407,19 @@ public partial class SettingsWindow : Window
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             var credentials = await HaOAuthLogin.LoginAsync(baseUrl, cts.Token);
 
-            status.Text = "Connecting…";
+            status.Text = Loc.Instance.Tr("Connection.Connecting");
             await AppSettings.ConnectWithOAuthAsync(credentials);
             // UpdateConnectionUi() runs via the ConnectionChanged event this raises.
         }
         catch (OperationCanceledException)
         {
-            status.Text = "Sign-in timed out. Try again.";
+            status.Text = Loc.Instance.Tr("Connection.SignInTimedOut");
             status.Foreground = Brushes.OrangeRed;
             button.IsEnabled = true;
         }
         catch (Exception ex)
         {
-            status.Text = $"Sign-in failed: {ex.Message}";
+            status.Text = Loc.Instance.Tr("Connection.SignInFailed", ex.Message);
             status.Foreground = Brushes.OrangeRed;
             button.IsEnabled = true;
         }
@@ -416,7 +446,7 @@ public partial class SettingsWindow : Window
         if (AppSettings.Client is null)
         {
             var status = this.FindControl<TextBlock>("StatusText")!;
-            status.Text = "Sign in first, then choose tiles.";
+            status.Text = Loc.Instance.Tr("Connection.SignInFirst");
             status.Foreground = Brushes.OrangeRed;
             return;
         }
@@ -513,7 +543,7 @@ public partial class SettingsWindow : Window
         var combo = this.FindControl<ComboBox>("MediaPlayerEntityBox")!;
         combo.Items.Clear();
 
-        var autoItem = new ComboBoxItem { Content = "Auto (recommended)", Tag = null };
+        var autoItem = new ComboBoxItem { Content = Loc.Instance.Tr("Tiles.MediaAuto"), Tag = null };
         combo.Items.Add(autoItem);
         combo.SelectedItem = autoItem;
 
@@ -587,6 +617,26 @@ public partial class SettingsWindow : Window
         await AppSettings.SetAppearanceAsync(new AppearancePreferences(shape));
     }
 
+    private bool _suppressLanguageEvents;
+
+    private void LoadLanguageUi()
+    {
+        _suppressLanguageEvents = true;
+        var box = this.FindControl<ComboBox>("LanguageBox")!;
+        box.SelectedItem = box.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == AppSettings.Language.ToString())
+            ?? box.Items.OfType<ComboBoxItem>().First();
+        _suppressLanguageEvents = false;
+    }
+
+    private async void OnLanguageChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressLanguageEvents) return;
+        var tag = (this.FindControl<ComboBox>("LanguageBox")!.SelectedItem as ComboBoxItem)?.Tag as string;
+        if (tag is null || !Enum.TryParse<AppLanguage>(tag, out var language)) return;
+
+        await AppSettings.SetLanguageAsync(language);
+    }
+
     private static readonly string[] SensorToggleNames =
     {
         "ShareCpuCheckBox", "ShareMemoryCheckBox", "ShareBatteryCheckBox", "ShareDiskCheckBox",
@@ -626,8 +676,7 @@ public partial class SettingsWindow : Window
 
     private void UpdateDeviceSlugPreview(string deviceName)
     {
-        this.FindControl<TextBlock>("DeviceSlugPreview")!.Text =
-            $"Registers as a device named \"{deviceName}\" in Home Assistant (Settings → Devices & Services → Mobile App) — all enabled sensors below group under it.";
+        this.FindControl<TextBlock>("DeviceSlugPreview")!.Text = Loc.Instance.Tr("Sensors.DeviceSlugPreview", deviceName);
     }
 
     private async void OnDeviceNameLostFocus(object? sender, RoutedEventArgs e) => await SaveSensorPrefsAsync();
@@ -667,7 +716,7 @@ public partial class SettingsWindow : Window
         catch (Exception ex)
         {
             var status = this.FindControl<TextBlock>("StatusText")!;
-            status.Text = $"Couldn't update startup setting: {ex.Message}";
+            status.Text = Loc.Instance.Tr("Connection.StartupError", ex.Message);
             status.Foreground = Brushes.OrangeRed;
             checkBox.IsChecked = !isChecked; // revert the toggle since it didn't actually take effect
         }
@@ -684,8 +733,7 @@ public partial class SettingsWindow : Window
         this.FindControl<ToggleSwitch>("NotificationsCheckBox")!.IsChecked = AppSettings.NotificationsEnabled;
 
         var slug = ApproximateHaSlug(AppSettings.SensorPrefs.DeviceName);
-        this.FindControl<TextBlock>("NotifyServiceText")!.Text =
-            $"In Home Assistant, call notify.mobile_app_{slug} (Developer Tools → Actions) to send a notification here. Exact name may vary slightly — check Developer Tools → Actions if this doesn't match.";
+        this.FindControl<TextBlock>("NotifyServiceText")!.Text = Loc.Instance.Tr("Notifications.ServiceText", slug);
     }
 
     private static string ApproximateHaSlug(string name)

@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Avalonia.Media;
 using HaDesktop.Core.Ha;
+using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
@@ -96,9 +98,32 @@ public static class HaEntityDisplay
         _ => "circle",
     };
 
-    /// <summary>"partlycloudy" -> "Partly Cloudy".</summary>
+    private static readonly Dictionary<string, string> ConditionKeys = new()
+    {
+        ["sunny"] = "Weather.Sunny",
+        ["clear-night"] = "Weather.ClearNight",
+        ["cloudy"] = "Weather.Cloudy",
+        ["partlycloudy"] = "Weather.PartlyCloudy",
+        ["fog"] = "Weather.Fog",
+        ["hazy"] = "Weather.Hazy",
+        ["rainy"] = "Weather.Rainy",
+        ["pouring"] = "Weather.Pouring",
+        ["snowy"] = "Weather.Snowy",
+        ["snowy-rainy"] = "Weather.SnowyRainy",
+        ["hail"] = "Weather.Hail",
+        ["lightning"] = "Weather.Lightning",
+        ["lightning-rainy"] = "Weather.LightningRainy",
+        ["windy"] = "Weather.Windy",
+        ["windy-variant"] = "Weather.WindyVariant",
+        ["exceptional"] = "Weather.Exceptional",
+    };
+
+    /// <summary>Translates a weather.* condition (e.g. "partlycloudy") to display text, falling back to title-casing unknown values.</summary>
     public static string PrettifyCondition(string condition)
     {
+        if (ConditionKeys.TryGetValue(condition, out var key))
+            return Loc.Instance.Tr(key);
+
         var words = condition.Replace('-', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return string.Join(' ', words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
     }
