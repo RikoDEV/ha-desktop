@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.WeatherWidget">
+    <Border Name="RootBorder" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="10">
+        <Grid>
+            <!-- Overlays RootBorder's theme background with a condition-tinted gradient when enabled; negative margin cancels the parent's Padding so it reaches the card's actual edges (RootBorder's own ClipToBounds trims it back to the rounded corners). -->
+            <Border Name="ConditionBackgroundOverlay" Margin="-10" IsVisible="False" />
+
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <PathIcon Name="ConditionIcon" Grid.Column="0" Width="26" Height="26" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Name="TempText" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Name="ConditionText" FontSize="11" Opacity="0.7" />
+                    </StackPanel>
+
+                    <StackPanel Name="WindHumidityPanel" Grid.Column="2" VerticalAlignment="Center" Spacing="2" IsVisible="False">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <PathIcon Name="WindIcon" Width="12" Height="12" Opacity="0.7" />
+                            <TextBlock Name="WindText" FontSize="11" Opacity="0.7" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <PathIcon Name="HumidityIcon" Width="12" Height="12" Opacity="0.7" />
+                            <TextBlock Name="HumidityText" FontSize="11" Opacity="0.7" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <UniformGrid Name="ForecastGrid" Rows="1" IsVisible="False" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

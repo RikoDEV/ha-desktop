@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.CameraTile"
+             Width="88" Height="76" Margin="4">
+    <Border Name="RootBorder" CornerRadius="6" ClipToBounds="True" Background="{DynamicResource ControlFillColorDefaultBrush}" Cursor="Hand">
+        <Grid>
+            <Image Name="SnapshotImage" Stretch="UniformToFill" />
+            <Border VerticalAlignment="Bottom" Background="#99000000" Padding="6,3">
+                <TextBlock Name="LabelText" FontSize="11" Foreground="White" TextTrimming="CharacterEllipsis" />
+            </Border>
+            <PathIcon Name="OfflineIcon" Width="20" Height="20" IsVisible="False" Opacity="0.5" />
+        </Grid>
+    </Border>
+</UserControl>

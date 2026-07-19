@@ -1,0 +1,89 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Markup.Xaml;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using HaDesktop.Core.Ha;
+
+namespace HaDesktop.Tray;
+
+/// <summary>
+/// Read-only camera tile: a periodically-refreshed still snapshot (not a live MJPEG/WebRTC
+/// stream — polling a still frame every few seconds keeps this in line with the app's
+/// low-CPU/low-memory goal). Clicking opens a larger view with a faster refresh cadence.
+/// </summary>
+public partial class CameraTile : UserControl
+{
+    private static readonly TimeSpan TileRefreshInterval = TimeSpan.FromSeconds(10);
+
+    public string? EntityId { get; set; }
+
+    private HaClient? _client;
+    private readonly DispatcherTimer _refreshTimer = new() { Interval = TileRefreshInterval };
+    private int _refreshToken;
+
+    public CameraTile()
+    {
+        InitializeComponent();
+        this.FindControl<PathIcon>("OfflineIcon")!.Data = Geometry.Parse(TileIcons.PathFor("camera"));
+        _refreshTimer.Tick += (_, _) => _ = RefreshSnapshotAsync();
+        DetachedFromVisualTree += (_, _) => _refreshTimer.Stop();
+        this.FindControl<Border>("RootBorder")!.PointerPressed += OnPointerPressed;
+    }
+
+    private void InitializeComponent()
+    {
+        AvaloniaXamlLoader.Load(this);
+    }
+
+    public void SetContent(string label, HaClient client)
+    {
+        _client = client;
+        this.FindControl<TextBlock>("LabelText")!.Text = label;
+        _ = RefreshSnapshotAsync();
+        _refreshTimer.Start();
+    }
+
+    public void SetCornerRadius(double radius) =>
+        this.FindControl<Border>("RootBorder")!.CornerRadius = new Avalonia.CornerRadius(radius);
+
+    public void SetWide(bool wide) => Width = wide ? 184 : 88;
+
+    private async Task RefreshSnapshotAsync()
+    {
+        if (_client is null || EntityId is null) return;
+
+        var myToken = ++_refreshToken;
+        var bytes = await _client.GetCameraSnapshotAsync(EntityId);
+        if (myToken != _refreshToken) return; // superseded by a newer tick or a rebuilt tile
+
+        var offlineIcon = this.FindControl<PathIcon>("OfflineIcon")!;
+        if (bytes is null)
+        {
+            offlineIcon.IsVisible = this.FindControl<Image>("SnapshotImage")!.Source is null;
+            return;
+        }
+
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            var bitmap = new Bitmap(stream);
+            this.FindControl<Image>("SnapshotImage")!.Source = bitmap;
+            offlineIcon.IsVisible = false;
+        }
+        catch
+        {
+            // corrupt/partial frame — keep whatever was last shown rather than blank the tile
+        }
+    }
+
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_client is null || EntityId is null) return;
+        CameraDetailFlyout.Show(this, EntityId, _client);
+    }
+}

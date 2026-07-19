@@ -1,0 +1,70 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HaDesktop.Tray.FlyoutWindow"
+        Title="HA Desktop"
+        Width="320" Height="470"
+        CanResize="False"
+        SystemDecorations="None"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowStartupLocation="Manual"
+        TransparencyLevelHint="AcrylicBlur, Mica, Blur"
+        Background="Transparent">
+
+    <!--
+        ExperimentalAcrylicBorder renders an actual frosted-glass blur+noise
+        material. Plain window-level Mica/AcrylicBlur alone can look like a
+        flat solid tint over a plain-colored desktop background — this gives
+        a visibly translucent panel regardless of what's behind it.
+    -->
+    <ExperimentalAcrylicBorder CornerRadius="8">
+        <ExperimentalAcrylicBorder.Material>
+            <ExperimentalAcrylicMaterial
+                BackgroundSource="Digger"
+                TintColor="{DynamicResource SolidBackgroundFillColorBase}"
+                TintOpacity="1"
+                MaterialOpacity="0.8" />
+        </ExperimentalAcrylicBorder.Material>
+
+        <Border CornerRadius="8"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource SurfaceStrokeColorDefaultBrush}"
+                Padding="12">
+            <!--
+                Grid with a star-sized last row, not a StackPanel — the window is a fixed size
+                (CanResize="False"), so a hardcoded ScrollViewer height would overflow past the
+                window's bottom edge (and get silently clipped, taking scrollable tiles with it)
+                whenever the weather/media widgets above it are also showing and eating into the
+                available space. The star row always gets exactly whatever room is actually left.
+            -->
+            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="4,0,0,4">
+                    <TextBlock Grid.Column="0" Text="Quick Settings" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Name="NotificationsButton" Click="OnNotificationsButtonClicked"
+                            Padding="4" Background="Transparent" BorderThickness="0"
+                            ToolTip.Tip="Recent notifications">
+                        <PathIcon Name="NotificationsIcon" Width="16" Height="16" />
+                    </Button>
+                    <Button Grid.Column="2" Name="SettingsButton" Click="OnOpenSettingsClicked"
+                            Padding="4" Background="Transparent" BorderThickness="0"
+                            ToolTip.Tip="Settings">
+                        <PathIcon Name="SettingsIcon" Width="16" Height="16" />
+                    </Button>
+                </Grid>
+                <ContentControl Grid.Row="1" Name="WeatherHost" IsVisible="False" />
+                <ContentControl Grid.Row="2" Name="MediaPlayerHost" IsVisible="False" />
+                <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl Name="TileList">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </ExperimentalAcrylicBorder>
+</Window>

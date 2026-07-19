@@ -1,0 +1,52 @@
+## .NET build results
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+
+## Visual Studio / Rider files
+.vs/
+.vsconfig
+*.user
+*.userosscache
+*.suo
+.idea/
+*.DotSettings.user
+
+## Build artifacts
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ll]og/
+[Ll]ogs/
+
+## Test results
+[Tt]est[Rr]esult*/
+
+## NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+.nuget/
+
+## Avalonia previewer cache
+*.avalonia.resources
+
+## Rider
+*.sln.iml
+
+## Misc OS files
+.DS_Store
+Thumbs.db
+
+## App runtime/log files
+tray-run.log
+
+## Local packaging output
+publish/
+dist/
+artifacts/
+*.zip
+*.tar.gz
+

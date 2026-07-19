@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.MediaPlayerWidget">
+    <Border CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ControlFillColorDefaultBrush}">
+        <Grid Name="RootGrid">
+            <!--
+                Canvas never contributes its children's size to its own DesiredSize (unlike
+                Grid/StackPanel), so binding the Image to RootGrid's own Bounds here can't create
+                a measure feedback loop — the foreground StackPanel alone drives RootGrid's height,
+                and the background art just stretches to match it after layout, instead of the
+                bitmap's native resolution inflating the whole card.
+            -->
+            <Canvas ClipToBounds="True">
+                <Image Name="BackgroundArtImage" Stretch="UniformToFill" IsVisible="False"
+                       Width="{Binding #RootGrid.Bounds.Width}" Height="{Binding #RootGrid.Bounds.Height}">
+                    <Image.Effect>
+                        <BlurEffect Radius="30" />
+                    </Image.Effect>
+                </Image>
+            </Canvas>
+            <Border Name="BackgroundTint" Background="{DynamicResource ControlFillColorDefaultBrush}" Opacity="0.72" IsVisible="False" />
+
+            <StackPanel Spacing="6" Margin="10">
+                <Grid ColumnDefinitions="40,*,Auto,Auto,Auto,Auto">
+                    <Border Grid.Column="0" Width="40" Height="40" CornerRadius="5" ClipToBounds="True"
+                            Background="{DynamicResource ControlFillColorSecondaryBrush}" Margin="0,0,8,0">
+                        <Image Name="AlbumArtImage" Stretch="UniformToFill" />
+                    </Border>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
+                        <TextBlock Name="MediaTitleText" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Name="MediaArtistText" FontSize="11" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+
+                    <Button Grid.Column="2" Name="PreviousButton" Padding="4" Background="Transparent" BorderThickness="0"
+                            VerticalAlignment="Center" ToolTip.Tip="Previous">
+                        <PathIcon Name="PreviousIcon" Width="15" Height="15" />
+                    </Button>
+
+                    <Button Grid.Column="3" Name="PlayPauseButton" Padding="6" Background="Transparent" BorderThickness="0"
+                            VerticalAlignment="Center" ToolTip.Tip="Play/Pause">
+                        <PathIcon Name="PlayPauseIcon" Width="18" Height="18" />
+                    </Button>
+
+                    <Button Grid.Column="4" Name="NextButton" Padding="4" Background="Transparent" BorderThickness="0"
+                            VerticalAlignment="Center" ToolTip.Tip="Next">
+                        <PathIcon Name="NextIcon" Width="15" Height="15" />
+                    </Button>
+
+                    <Button Grid.Column="5" Name="PowerButton" Padding="4" Background="Transparent" BorderThickness="0"
+                            VerticalAlignment="Center" Margin="2,0,0,0" ToolTip.Tip="Power" IsVisible="False">
+                        <PathIcon Name="PowerIcon" Width="14" Height="14" />
+                    </Button>
+                </Grid>
+
+                <Grid Name="ProgressRow" ColumnDefinitions="Auto,*,Auto" IsVisible="False">
+                    <TextBlock Name="PositionText" Grid.Column="0" FontSize="9" Opacity="0.6" VerticalAlignment="Center" Margin="0,0,4,0" />
+                    <Slider Name="ProgressSlider" Grid.Column="1" Minimum="0" Maximum="1" VerticalAlignment="Center" />
+                    <TextBlock Name="DurationText" Grid.Column="2" FontSize="9" Opacity="0.6" VerticalAlignment="Center" Margin="4,0,0,0" />
+                </Grid>
+
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                    <Button Grid.Column="0" Name="ShuffleButton" Padding="4" Background="Transparent" BorderThickness="0" ToolTip.Tip="Shuffle" IsVisible="False">
+                        <PathIcon Name="ShuffleIcon" Width="13" Height="13" />
+                    </Button>
+                    <Button Grid.Column="1" Name="RepeatButton" Padding="4" Background="Transparent" BorderThickness="0" ToolTip.Tip="Repeat" IsVisible="False">
+                        <PathIcon Name="RepeatIcon" Width="13" Height="13" />
+                    </Button>
+
+                    <PathIcon Grid.Column="3" Name="VolumeIcon" Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center" IsVisible="False" />
+                    <Slider Grid.Column="4" Name="VolumeSlider" Minimum="0" Maximum="1" Width="72" VerticalAlignment="Center" IsVisible="False" />
+                </Grid>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

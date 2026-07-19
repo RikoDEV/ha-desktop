@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.SensorTile"
+             Width="88" Height="76" Margin="4">
+    <Border Name="RootBorder" CornerRadius="6" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="6">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="2">
+            <PathIcon Name="IconIcon" Width="18" Height="18" HorizontalAlignment="Center" />
+            <TextBlock Name="ValueText" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <TextBlock Name="LabelText" FontSize="10" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" MaxWidth="76" Opacity="0.8" />
+        </StackPanel>
+    </Border>
+</UserControl>

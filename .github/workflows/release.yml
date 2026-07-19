@@ -1,0 +1,190 @@
+name: Release
+
+# Push a tag like "v1.2.3" to build installer/portable packages and publish
+# a GitHub Release with them attached. Can also be run manually (workflow_dispatch)
+# to sanity-check the packaging without cutting a release.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.2.3) — only used for manual test runs'
+        required: false
+        default: '0.0.0-dev'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    needs: prepare
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish self-contained win-x64
+        shell: pwsh
+        run: >
+          dotnet publish src/HaDesktop.Tray/HaDesktop.Tray.csproj -c Release -r win-x64
+          --self-contained true
+          -p:Version=$env:VERSION
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/win-x64
+
+      - name: Create portable zip
+        shell: pwsh
+        run: Compress-Archive -Path publish/win-x64/* -DestinationPath "HaDesktop-$env:VERSION-win-x64-portable.zip"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$env:VERSION" `
+            "/DSourceDir=$(Resolve-Path publish/win-x64)" `
+            "/O$(Resolve-Path artifacts)" `
+            installer\windows\setup.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            HaDesktop-*-win-x64-portable.zip
+            artifacts/HaDesktop-Setup-*.exe
+
+  build-macos:
+    needs: prepare
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish self-contained macOS builds
+        shell: bash
+        run: |
+          for rid in osx-x64 osx-arm64; do
+            dotnet publish src/HaDesktop.Tray/HaDesktop.Tray.csproj -c Release -r "$rid" \
+              --self-contained true -p:Version="$VERSION" -o "publish/$rid"
+          done
+
+      - name: Package .app bundles
+        shell: bash
+        run: |
+          for rid in osx-x64 osx-arm64; do
+            APP="dist/$rid/HA Desktop.app"
+            mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+            cp -R "publish/$rid/." "$APP/Contents/MacOS/"
+            chmod +x "$APP/Contents/MacOS/HaDesktop.Tray"
+
+            PLIST="$APP/Contents/Info.plist"
+            {
+          echo '<?xml version="1.0" encoding="UTF-8"?>'
+          echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+          echo '<plist version="1.0">'
+          echo '<dict>'
+          echo '  <key>CFBundleName</key><string>HA Desktop</string>'
+          echo '  <key>CFBundleDisplayName</key><string>HA Desktop</string>'
+          echo '  <key>CFBundleIdentifier</key><string>io.hadesktop.tray</string>'
+          echo "  <key>CFBundleVersion</key><string>$VERSION</string>"
+          echo "  <key>CFBundleShortVersionString</key><string>$VERSION</string>"
+          echo '  <key>CFBundleExecutable</key><string>HaDesktop.Tray</string>'
+          echo '  <key>CFBundlePackageType</key><string>APPL</string>'
+          echo '  <key>LSUIElement</key><true/>'
+          echo '  <key>NSHighResolutionCapable</key><true/>'
+          echo '</dict>'
+          echo '</plist>'
+            } > "$PLIST"
+
+            ditto -c -k --sequesterRsrc --keepParent "$APP" "HaDesktop-$VERSION-$rid.zip"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: HaDesktop-*-osx-*.zip
+
+  build-linux:
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish self-contained linux-x64
+        shell: bash
+        run: >
+          dotnet publish src/HaDesktop.Tray/HaDesktop.Tray.csproj -c Release -r linux-x64
+          --self-contained true
+          -p:Version="$VERSION"
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/linux-x64
+
+      - name: Create portable tarball
+        shell: bash
+        run: |
+          chmod +x publish/linux-x64/HaDesktop.Tray
+          tar -czf "HaDesktop-$VERSION-linux-x64-portable.tar.gz" -C publish/linux-x64 .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: HaDesktop-*-linux-x64-portable.tar.gz
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ prepare, build-windows, build-macos, build-linux ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: HA Desktop ${{ needs.prepare.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/windows-artifacts/*
+            dist/macos-artifacts/*
+            dist/linux-artifacts/*

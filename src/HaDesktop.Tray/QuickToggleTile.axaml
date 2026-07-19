@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.QuickToggleTile"
+             Width="88" Height="76" Margin="4">
+    <ToggleButton Name="Toggle"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                  HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                  CornerRadius="6"
+                  Click="OnClick">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="4">
+            <PathIcon Name="IconIcon" Width="20" Height="20" HorizontalAlignment="Center" />
+            <TextBlock Name="LabelText" FontSize="11" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" MaxWidth="76" />
+        </StackPanel>
+    </ToggleButton>
+</UserControl>

@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.CoverTile"
+             Width="88" Height="76" Margin="4">
+    <!-- ClipToBounds is a safety net, not the primary fix — content below is sized/capped
+         (single-line label, small icon, tight spacing, no bottom padding) to actually fit
+         in 76px — the same height every other tile type uses — without relying on clipping. -->
+    <Border Name="RootBorder" CornerRadius="6" ClipToBounds="True" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="6,4,6,0">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Stretch" Spacing="1">
+            <PathIcon Name="CoverIcon" Width="14" Height="14" HorizontalAlignment="Center" />
+            <TextBlock Name="LabelText" FontSize="10" TextAlignment="Center" HorizontalAlignment="Center"
+                       MaxWidth="76" MaxLines="1" TextTrimming="CharacterEllipsis" />
+            <TextBlock Name="StatusText" FontSize="9" Opacity="0.6" HorizontalAlignment="Center"
+                       MaxWidth="76" TextTrimming="CharacterEllipsis" />
+            <Grid ColumnDefinitions="*,*,*" Margin="0,1,0,0">
+                <Button Name="OpenButton" Grid.Column="0" Height="24" Padding="0" Margin="0,0,1,0" Click="OnOpenClicked" ToolTip.Tip="Open"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Name="OpenIcon" Width="11" Height="11" />
+                </Button>
+                <Button Name="StopButton" Grid.Column="1" Height="24" Padding="0" Margin="1,0" Click="OnStopClicked" ToolTip.Tip="Stop"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Name="StopIcon" Width="10" Height="10" />
+                </Button>
+                <Button Name="CloseButton" Grid.Column="2" Height="24" Padding="0" Margin="1,0,0,0" Click="OnCloseClicked" ToolTip.Tip="Close"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Name="CloseIcon" Width="11" Height="11" />
+                </Button>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>
