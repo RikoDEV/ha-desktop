@@ -568,6 +568,28 @@ public static class AppSettings
             if (snapshot.IsMuted is { } isMuted)
                 sensors.Add(new MobileAppSensor("muted", "Muted", isMuted ? "Muted" : "Unmuted", isMuted ? "mdi:volume-mute" : "mdi:volume-high"));
         }
+        if (prefs.ShareActiveAudioOutput && !string.IsNullOrEmpty(snapshot.ActiveAudioOutput))
+            sensors.Add(new MobileAppSensor("active_audio_output", "Active Audio Output", snapshot.ActiveAudioOutput, "mdi:speaker"));
+        if (prefs.ShareActiveAudioInput && !string.IsNullOrEmpty(snapshot.ActiveAudioInput))
+            sensors.Add(new MobileAppSensor("active_audio_input", "Active Audio Input", snapshot.ActiveAudioInput, "mdi:microphone"));
+        if (prefs.ShareAudioOutputInUse && snapshot.IsAudioOutputInUse is { } isOutputInUse)
+            sensors.Add(new MobileAppSensor("audio_output_in_use", "Audio Output In Use", isOutputInUse ? "In Use" : "Idle", isOutputInUse ? "mdi:volume-high" : "mdi:volume-off"));
+        if (prefs.ShareAudioInputInUse && snapshot.IsAudioInputInUse is { } isInputInUse)
+            sensors.Add(new MobileAppSensor("audio_input_in_use", "Audio Input In Use", isInputInUse ? "In Use" : "Idle", isInputInUse ? "mdi:microphone" : "mdi:microphone-off"));
+        if (prefs.ShareActiveCamera && !string.IsNullOrEmpty(snapshot.ActiveCamera))
+            sensors.Add(new MobileAppSensor("active_camera", "Active Camera", snapshot.ActiveCamera, "mdi:camera"));
+        if (prefs.ShareCameraInUse && snapshot.IsCameraInUse is { } isCameraInUse)
+            sensors.Add(new MobileAppSensor("camera_in_use", "Camera In Use", isCameraInUse ? "In Use" : "Idle", isCameraInUse ? "mdi:camera" : "mdi:camera-off"));
+        if (prefs.ShareSsid && !string.IsNullOrEmpty(snapshot.Ssid))
+            sensors.Add(new MobileAppSensor("ssid", "SSID", snapshot.Ssid, "mdi:wifi"));
+        if (prefs.ShareBssid && !string.IsNullOrEmpty(snapshot.Bssid))
+            sensors.Add(new MobileAppSensor("bssid", "BSSID", snapshot.Bssid, "mdi:wifi-marker"));
+        if (prefs.ShareConnectionType && !string.IsNullOrEmpty(snapshot.ConnectionType))
+            sensors.Add(new MobileAppSensor("connection_type", "Connection Type", snapshot.ConnectionType, snapshot.ConnectionType == "Wi-Fi" ? "mdi:wifi" : "mdi:ethernet"));
+        if (prefs.ShareDisplayCount && snapshot.DisplayCount is { } displayCount)
+            sensors.Add(new MobileAppSensor("displays", "Displays", displayCount, "mdi:monitor-multiple", null, null, "measurement"));
+        if (prefs.SharePrimaryDisplay && !string.IsNullOrEmpty(snapshot.PrimaryDisplay))
+            sensors.Add(new MobileAppSensor("primary_display", "Primary Display", snapshot.PrimaryDisplay, "mdi:monitor"));
 
         if (sensors.Count == 0) return;
 

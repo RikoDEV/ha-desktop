@@ -87,6 +87,7 @@ internal static class CrossPlatformMetrics
             {
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
+                CreateNoWindow = true, // otherwise a console window flashes on every poll of this 30s-interval sensor loop (Windows only; harmless elsewhere)
             };
             psi.ArgumentList.Add("--query-gpu=utilization.gpu");
             psi.ArgumentList.Add("--format=csv,noheader,nounits");

@@ -259,6 +259,52 @@
                                     </Grid>
                                     <TextBlock Text="{loc:Tr Sensors.VolumeCommandNote}"
                                                 FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.ActiveAudioOutput}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareActiveAudioOutputCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.ActiveAudioInput}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareActiveAudioInputCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.AudioOutputInUse}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareAudioOutputInUseCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.AudioInputInUse}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareAudioInputInUseCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.ActiveCamera}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareActiveCameraCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.CameraInUse}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareCameraInUseCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Ssid}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareSsidCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Bssid}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareBssidCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.ConnectionType}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareConnectionTypeCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <TextBlock Text="{loc:Tr Sensors.WifiNote}"
+                                                FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.DisplayCount}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareDisplayCountCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.PrimaryDisplay}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="SharePrimaryDisplayCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
                                 </StackPanel>
                             </StackPanel>
                         </ui:SettingsExpander.Items>

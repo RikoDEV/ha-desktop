@@ -14,4 +14,15 @@ public sealed record SensorSnapshot(
     double? DiskThroughputMbps = null,
     bool? IsSessionLocked = null,
     double? VolumePercent = null,
-    bool? IsMuted = null);
+    bool? IsMuted = null,
+    string? ActiveAudioOutput = null,
+    string? ActiveAudioInput = null,
+    bool? IsAudioOutputInUse = null,
+    bool? IsAudioInputInUse = null,
+    string? ActiveCamera = null,
+    bool? IsCameraInUse = null,
+    string? Ssid = null,
+    string? Bssid = null,
+    string? ConnectionType = null,
+    int? DisplayCount = null,
+    string? PrimaryDisplay = null);

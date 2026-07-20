@@ -530,6 +530,9 @@ public partial class SettingsWindow : Window
         "ShareCpuCheckBox", "ShareMemoryCheckBox", "ShareBatteryCheckBox", "ShareDiskCheckBox",
         "ShareUptimeCheckBox", "ShareActiveWindowCheckBox", "ShareGpuCheckBox", "ShareNetworkCheckBox",
         "ShareStorageCheckBox", "ShareDiskThroughputCheckBox", "ShareSessionLockCheckBox", "ShareVolumeCheckBox",
+        "ShareActiveAudioOutputCheckBox", "ShareActiveAudioInputCheckBox", "ShareAudioOutputInUseCheckBox", "ShareAudioInputInUseCheckBox",
+        "ShareActiveCameraCheckBox", "ShareCameraInUseCheckBox", "ShareSsidCheckBox", "ShareBssidCheckBox", "ShareConnectionTypeCheckBox",
+        "ShareDisplayCountCheckBox", "SharePrimaryDisplayCheckBox",
     };
 
     // Assumed available until TestGpuAvailabilityAsync finishes, so the toggle doesn't flash
@@ -589,6 +592,17 @@ public partial class SettingsWindow : Window
         this.FindControl<ToggleSwitch>("ShareDiskThroughputCheckBox")!.IsChecked = prefs.ShareDiskThroughput;
         this.FindControl<ToggleSwitch>("ShareSessionLockCheckBox")!.IsChecked = prefs.ShareSessionLock;
         this.FindControl<ToggleSwitch>("ShareVolumeCheckBox")!.IsChecked = prefs.ShareVolume;
+        this.FindControl<ToggleSwitch>("ShareActiveAudioOutputCheckBox")!.IsChecked = prefs.ShareActiveAudioOutput;
+        this.FindControl<ToggleSwitch>("ShareActiveAudioInputCheckBox")!.IsChecked = prefs.ShareActiveAudioInput;
+        this.FindControl<ToggleSwitch>("ShareAudioOutputInUseCheckBox")!.IsChecked = prefs.ShareAudioOutputInUse;
+        this.FindControl<ToggleSwitch>("ShareAudioInputInUseCheckBox")!.IsChecked = prefs.ShareAudioInputInUse;
+        this.FindControl<ToggleSwitch>("ShareActiveCameraCheckBox")!.IsChecked = prefs.ShareActiveCamera;
+        this.FindControl<ToggleSwitch>("ShareCameraInUseCheckBox")!.IsChecked = prefs.ShareCameraInUse;
+        this.FindControl<ToggleSwitch>("ShareSsidCheckBox")!.IsChecked = prefs.ShareSsid;
+        this.FindControl<ToggleSwitch>("ShareBssidCheckBox")!.IsChecked = prefs.ShareBssid;
+        this.FindControl<ToggleSwitch>("ShareConnectionTypeCheckBox")!.IsChecked = prefs.ShareConnectionType;
+        this.FindControl<ToggleSwitch>("ShareDisplayCountCheckBox")!.IsChecked = prefs.ShareDisplayCount;
+        this.FindControl<ToggleSwitch>("SharePrimaryDisplayCheckBox")!.IsChecked = prefs.SharePrimaryDisplay;
         UpdateDeviceSlugPreview(prefs.DeviceName);
         UpdateSensorRowsEnabled(prefs.Enabled);
     }
@@ -639,7 +653,18 @@ public partial class SettingsWindow : Window
             this.FindControl<ToggleSwitch>("ShareStorageCheckBox")!.IsChecked == true,
             this.FindControl<ToggleSwitch>("ShareDiskThroughputCheckBox")!.IsChecked == true,
             this.FindControl<ToggleSwitch>("ShareSessionLockCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareVolumeCheckBox")!.IsChecked == true);
+            this.FindControl<ToggleSwitch>("ShareVolumeCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareActiveAudioOutputCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareActiveAudioInputCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareAudioOutputInUseCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareAudioInputInUseCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareActiveCameraCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareCameraInUseCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareSsidCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareBssidCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareConnectionTypeCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareDisplayCountCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("SharePrimaryDisplayCheckBox")!.IsChecked == true);
 
         await AppSettings.SetSensorPreferencesAsync(prefs);
     }

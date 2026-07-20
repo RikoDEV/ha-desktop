@@ -19,6 +19,7 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
     public async Task<SensorSnapshot> CollectAsync(CancellationToken ct = default)
     {
         var (volumePercent, isMuted) = WindowsAudioEndpoint.GetState();
+        var (ssid, bssid) = await WindowsWifiInfo.GetWifiInfoAsync(ct);
         return new(
             SampleCpuPercent(),
             SampleMemoryPercent(),
@@ -32,7 +33,18 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
             SampleDiskThroughputMbps(),
             SampleIsSessionLocked(),
             volumePercent,
-            isMuted);
+            isMuted,
+            WindowsAudioEndpoint.GetOutputDeviceName(),
+            WindowsAudioEndpoint.GetInputDeviceName(),
+            WindowsAudioEndpoint.IsOutputActive(),
+            WindowsPrivacyConsentStore.IsMicrophoneInUse(),
+            WindowsCameraEnumerator.GetFirstCameraName(),
+            WindowsPrivacyConsentStore.IsCameraInUse(),
+            ssid,
+            bssid,
+            WindowsWifiInfo.GetConnectionType(ssid),
+            WindowsDisplayInfo.GetDisplayCount(),
+            WindowsDisplayInfo.GetPrimaryDisplayDescription());
     }
 
     /// <summary>Combined read+write throughput of the system drive, in Mbit/s — same "Bytes/sec" counter family as the GPU/disk-activity ones, kept alive across polls for the same reason.</summary>

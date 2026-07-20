@@ -99,8 +99,29 @@ public partial class TileLayoutEditor : UserControl
 
     private void OnConnectionChanged() => Dispatcher.UIThread.Post(() => _ = RefreshAsync());
 
+    /// <summary>
+    /// True whenever a drag (whole-tile or a quadrant pulled out of a Group) is in progress. A
+    /// refresh has to defer entirely during this window: it would otherwise reset the actively-
+    /// dragged card's Canvas position out from under the pointer, and — if the reuse-vs-recreate
+    /// logic below decides to rebuild that card fresh — leave the *old* Border instance (which
+    /// still holds pointer capture and the drag's PointerReleased handler) detached from the visual
+    /// tree with no way to ever receive its release event, stuck permanently mid-drag-styled
+    /// (dimmed, elevated, unresponsive) until the window is closed and reopened.
+    /// </summary>
+    private bool IsDragActive => _draggingCard is not null || _quadrantGhost is not null;
+
+    private int _refreshToken;
+
     private async Task RefreshAsync()
     {
+        // AppSettings.ConnectionChanged fires for any settings change anywhere in the app — not
+        // just tile edits — so overlapping calls here are routine, not exceptional: a drop's own
+        // direct refresh call can easily still be awaiting HA's state fetch when an unrelated
+        // change (or another drop) posts a second one. An older call resuming after a newer one
+        // already rebuilt the canvas would otherwise re-add/duplicate cards.
+        if (IsDragActive) return;
+        var myToken = ++_refreshToken;
+
         _statesByEntityId.Clear();
         if (AppSettings.Client is { } client)
         {
@@ -111,6 +132,8 @@ public partial class TileLayoutEditor : UserControl
             }
             catch { /* editor still usable — labels fall back to raw entity ids below */ }
         }
+
+        if (myToken != _refreshToken || IsDragActive) return; // superseded, or a drag started while we were awaiting
 
         _currentConfigs = TileLayoutCompactor.Compact(AppSettings.SelectedTiles);
         _mergeHighlightKey = null;
@@ -143,6 +166,12 @@ public partial class TileLayoutEditor : UserControl
                 existing.Child = BuildCardContent(config);
                 Canvas.SetLeft(existing, left);
                 Canvas.SetTop(existing, top);
+                // Belt-and-suspenders: a card should never legitimately reach a settle-refresh
+                // still dimmed/elevated from a drag, but if some other edge case ever leaves one
+                // that way, this makes the next refresh self-heal it instead of leaving it stuck
+                // until the window is closed and reopened.
+                existing.ZIndex = 0;
+                existing.Opacity = 1;
             }
             else
             {
