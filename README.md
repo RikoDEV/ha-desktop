@@ -12,7 +12,7 @@ A lightweight system tray client for [Home Assistant](https://www.home-assistant
 - **Cover tiles** — open/close/stop controls for blinds, garage doors, etc.
 - **Media player widget** — playback controls for a chosen media player entity.
 - **Weather widget** — current conditions and forecast.
-- **Sensor tiles & system sensor sharing** — optionally publish this PC's metrics back to HA as `mobile_app` sensors: CPU, memory, disk I/O activity, storage capacity used, disk throughput, GPU, battery, uptime, network throughput, active window, session lock state, and system volume/mute.
+- **Sensor tiles & system sensor sharing** — optionally publish this PC's metrics back to HA as `mobile_app` sensors: CPU, memory, disk I/O activity, storage capacity used, disk throughput, GPU, battery, uptime, network throughput, active window, session lock state, system volume/mute, active audio output/input device + in-use state, active camera + in-use state, Wi-Fi SSID/BSSID/connection type, and display count + primary display resolution. Audio/camera/Wi-Fi/display sensors are currently Windows-only.
 - **Remote volume control from HA** — with the volume sensor enabled, an HA automation can mute, unmute, toggle mute, or set this PC's volume by sending a `notify.mobile_app_<device>` call with a `command_volume_*` message (see [Remote commands](#remote-commands-from-ha)).
 - **Native notifications** — subscribes to HA's mobile app push channel and shows notifications using the OS notification center, with an in-app history of the last 10.
 - **Secure login** — signs in via HA's browser-based OAuth (loopback redirect, RFC 8252), the same flow HA's official mobile apps use. No long-lived access tokens are pasted in by hand.
