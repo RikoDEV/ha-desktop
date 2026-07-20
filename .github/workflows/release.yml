@@ -53,6 +53,7 @@ jobs:
           -p:Version=$env:VERSION
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
           -o publish/win-x64
 
       - name: Create portable zip
@@ -96,7 +97,7 @@ jobs:
         run: |
           for rid in osx-x64 osx-arm64; do
             dotnet publish src/HaDesktop.Tray/HaDesktop.Tray.csproj -c Release -r "$rid" \
-              --self-contained true -p:Version="$VERSION" -o "publish/$rid"
+              --self-contained true -p:Version="$VERSION" -p:DebugType=None -o "publish/$rid"
           done
 
       - name: Package .app bundles
@@ -155,6 +156,7 @@ jobs:
           -p:Version="$VERSION"
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
           -o publish/linux-x64
 
       - name: Create portable tarball
