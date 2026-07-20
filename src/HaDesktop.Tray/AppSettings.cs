@@ -470,7 +470,20 @@ public static class AppSettings
             notification.Title, notification.Message, notification.ImageBytes,
             notification.Actions ?? Array.Empty<NotificationAction>(), notification.Silent);
 
-        if (actionId is null || Credentials is null || Registration is null) return;
+        if (actionId is null) return;
+
+        // A "uri" action navigates locally instead of triggering an HA-side automation — this is
+        // the path for notifiers that report the click back in-process (macOS/Linux); Windows'
+        // toast click goes through a relaunch instead (see Program.cs), which has its own copy of
+        // this same uri-vs-report branch since it has no access to this notification's Actions list.
+        var matchedAction = notification.Actions?.FirstOrDefault(a => a.Id == actionId);
+        if (matchedAction?.Uri is { } uri)
+        {
+            TryOpenUri(uri);
+            return;
+        }
+
+        if (Credentials is null || Registration is null) return;
 
         try
         {
@@ -481,6 +494,12 @@ public static class AppSettings
         {
             // best effort — the button click still visually registered for the user even if HA never hears about it
         }
+    }
+
+    private static void TryOpenUri(string uri)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri) { UseShellExecute = true }); }
+        catch { /* best effort — no default handler for this URI, nothing sensible to do */ }
     }
 
     private static void UpdateSensorTimer()

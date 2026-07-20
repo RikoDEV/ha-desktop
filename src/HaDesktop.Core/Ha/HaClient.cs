@@ -412,9 +412,9 @@ public sealed class HaClient : IAsyncDisposable
 
         var actions = data?["actions"]?.AsArray()
             .OfType<JsonObject>()
-            .Select(a => (Action: AsString(a["action"]), Title: AsString(a["title"])))
+            .Select(a => (Action: AsString(a["action"]), Title: AsString(a["title"]), Uri: AsString(a["uri"])))
             .Where(a => a.Action is not null && a.Title is not null)
-            .Select(a => new NotificationAction(a.Action!, a.Title!))
+            .Select(a => new NotificationAction(a.Action!, a.Title!, a.Uri))
             .ToList();
 
         // "data.push.sound" is the iOS/macOS field for this; there's no Android/desktop equivalent

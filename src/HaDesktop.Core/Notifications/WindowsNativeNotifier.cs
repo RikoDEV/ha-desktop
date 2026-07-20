@@ -14,15 +14,17 @@ namespace HaDesktop.Core.Notifications;
 /// without a shortcut registering that identity and pointing at this exe's own icon, Windows has
 /// nothing to look up and falls back to a generic icon.
 ///
-/// Action buttons use activationType="protocol" (arguments="hadesktop-notify-action:{id}"),
-/// resolved via <see cref="EnsureProtocolRegistered"/> to a per-user registry entry that reopens
-/// this exe. That's deliberate: proper in-app activation (so a click is delivered back to this
-/// same running process) needs a registered COM notification activator + AppUserModelID, which
-/// in turn needs a packaged app identity this project doesn't have. Protocol activation needs
-/// none of that — clicking a button just relaunches HaDesktop.Tray with the action id as an
-/// argument (see Program.cs), which reports it to HA and exits, at the cost of a brief relaunch
-/// instead of an in-process callback. Text-reply ("behavior: textInput") actions aren't supported
-/// this way — reading a toast's input field back requires that same proper activation path.
+/// Action buttons use activationType="protocol" (arguments="hadesktop-notify-action:{id}", or
+/// "hadesktop-notify-action:{id}?uri={escaped}" for a "uri" action), resolved via
+/// <see cref="EnsureProtocolRegistered"/> to a per-user registry entry that reopens this exe.
+/// That's deliberate: proper in-app activation (so a click is delivered back to this same running
+/// process) needs a registered COM notification activator + AppUserModelID, which in turn needs a
+/// packaged app identity this project doesn't have. Protocol activation needs none of that —
+/// clicking a button just relaunches HaDesktop.Tray with the action id (and optional uri) as an
+/// argument (see Program.cs), which opens the uri or reports the id to HA and exits, at the cost
+/// of a brief relaunch instead of an in-process callback. Text-reply ("behavior: textInput")
+/// actions aren't supported this way — reading a toast's input field back requires that same
+/// proper activation path.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsNativeNotifier : INativeNotifier
@@ -60,7 +62,9 @@ public sealed class WindowsNativeNotifier : INativeNotifier
             foreach ($a in $actions) {
                 $actionEl = $template.CreateElement('action')
                 $actionEl.SetAttribute('content', $a.title)
-                $actionEl.SetAttribute('arguments', "hadesktop-notify-action:$($a.id)")
+                $argValue = $a.id
+                if ($a.uri) { $argValue = "$($a.id)?uri=$([uri]::EscapeDataString($a.uri))" }
+                $actionEl.SetAttribute('arguments', "hadesktop-notify-action:$argValue")
                 $actionEl.SetAttribute('activationType', 'protocol')
                 $actionsEl.AppendChild($actionEl) | Out-Null
             }
@@ -109,7 +113,7 @@ public sealed class WindowsNativeNotifier : INativeNotifier
         if (imagePath is not null)
             psi.Environment["HA_DESKTOP_IMAGE_PATH"] = imagePath;
         if (actions.Count > 0)
-            psi.Environment["HA_DESKTOP_ACTIONS_JSON"] = JsonSerializer.Serialize(actions.Select(a => new { id = a.Id, title = a.Title }));
+            psi.Environment["HA_DESKTOP_ACTIONS_JSON"] = JsonSerializer.Serialize(actions.Select(a => new { id = a.Id, title = a.Title, uri = a.Uri }));
 
         try
         {

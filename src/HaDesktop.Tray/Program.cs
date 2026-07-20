@@ -30,15 +30,28 @@ class Program
     /// <summary>
     /// Entry point when the user clicks an action button on a Windows toast (see
     /// WindowsNativeNotifier's class summary for why this needs a relaunch instead of an
-    /// in-process callback): Windows reopens this exe with the clicked action's URI as its
-    /// only argument, so this reports the action to HA independently and exits without ever
-    /// starting the tray UI.
+    /// in-process callback): Windows reopens this exe with the clicked action's protocol
+    /// argument, "{id}" or "{id}?uri={escaped}" for a "uri" action. A uri action opens locally
+    /// (browser, or whatever handles that scheme) instead of reporting anything to HA — same as
+    /// AppSettings.ShowAndReportActionAsync does for the macOS/Linux notifiers, which report a
+    /// click back in-process instead of via a relaunch and so have their own copy of this branch.
     /// </summary>
-    private static async Task HandleNotificationActionAsync(string uri)
+    private static async Task HandleNotificationActionAsync(string protocolArgument)
     {
         try
         {
-            var actionId = uri[(NotificationProtocol.Scheme.Length + 1)..];
+            var payload = protocolArgument[(NotificationProtocol.Scheme.Length + 1)..];
+
+            var queryIndex = payload.IndexOf("?uri=", StringComparison.Ordinal);
+            if (queryIndex >= 0)
+            {
+                var actionUri = Uri.UnescapeDataString(payload[(queryIndex + "?uri=".Length)..]);
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(actionUri) { UseShellExecute = true }); }
+                catch { /* best effort — no default handler for this URI, nothing sensible to do */ }
+                return;
+            }
+
+            var actionId = payload;
 
             var saved = await CredentialStore.Current.LoadAsync();
             var registration = await MobileAppRegistrationStore.LoadAsync();
