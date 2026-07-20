@@ -10,16 +10,124 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
     private (long Idle, long Kernel, long User)? _lastCpuSample;
     private List<PerformanceCounter>? _gpuEngineCounters;
     private DateTime _gpuCountersRefreshedAt = DateTime.MinValue;
+    private PerformanceCounter? _diskIdleTimeCounter;
+    private bool _diskCounterPrimed;
+    private PerformanceCounter? _diskReadBytesCounter;
+    private PerformanceCounter? _diskWriteBytesCounter;
+    private bool _diskThroughputCounterPrimed;
 
-    public async Task<SensorSnapshot> CollectAsync(CancellationToken ct = default) => new(
-        SampleCpuPercent(),
-        SampleMemoryPercent(),
-        SampleBatteryPercent(),
-        CrossPlatformMetrics.SampleDiskPercent(),
-        CrossPlatformMetrics.SampleUptimeHours(),
-        SampleActiveWindowTitle(),
-        await SampleGpuPercentAsync(),
-        CrossPlatformMetrics.SampleNetworkThroughputMbps());
+    public async Task<SensorSnapshot> CollectAsync(CancellationToken ct = default)
+    {
+        var (volumePercent, isMuted) = WindowsAudioEndpoint.GetState();
+        return new(
+            SampleCpuPercent(),
+            SampleMemoryPercent(),
+            SampleBatteryPercent(),
+            SampleDiskActivePercent(),
+            CrossPlatformMetrics.SampleUptimeHours(),
+            SampleActiveWindowTitle(),
+            await SampleGpuPercentAsync(),
+            CrossPlatformMetrics.SampleNetworkThroughputMbps(),
+            CrossPlatformMetrics.SampleDiskPercent(),
+            SampleDiskThroughputMbps(),
+            SampleIsSessionLocked(),
+            volumePercent,
+            isMuted);
+    }
+
+    /// <summary>Combined read+write throughput of the system drive, in Mbit/s — same "Bytes/sec" counter family as the GPU/disk-activity ones, kept alive across polls for the same reason.</summary>
+    private double? SampleDiskThroughputMbps()
+    {
+        try
+        {
+            _diskReadBytesCounter ??= new PerformanceCounter("PhysicalDisk", "Disk Read Bytes/sec", "_Total", readOnly: true);
+            _diskWriteBytesCounter ??= new PerformanceCounter("PhysicalDisk", "Disk Write Bytes/sec", "_Total", readOnly: true);
+
+            var readBytesPerSec = _diskReadBytesCounter.NextValue();
+            var writeBytesPerSec = _diskWriteBytesCounter.NextValue();
+
+            if (!_diskThroughputCounterPrimed)
+            {
+                _diskThroughputCounterPrimed = true;
+                return null; // priming sample, not a real reading
+            }
+
+            return Math.Round((readBytesPerSec + writeBytesPerSec) * 8.0 / 1_000_000.0, 2);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The lock screen runs on a separate desktop that the interactive session can't switch to
+    /// while locked, so <c>OpenInputDesktop</c> failing is the standard way to detect a locked
+    /// workstation without registering for WTS session-change notifications.
+    /// </summary>
+    private static bool? SampleIsSessionLocked()
+    {
+        try
+        {
+            var desktop = OpenInputDesktop(0, false, DesktopSwitchDesktop);
+            if (desktop == IntPtr.Zero) return true;
+            CloseDesktop(desktop);
+            return false;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private const uint DesktopSwitchDesktop = 0x0100;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr OpenInputDesktop(uint dwFlags, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll")]
+    private static extern bool CloseDesktop(IntPtr hDesktop);
+
+    /// <summary>
+    /// Matches Task Manager's "Disk" percentage — how busy the disk's I/O is right now — not how
+    /// full it is. <see cref="CrossPlatformMetrics.SampleDiskPercent"/> (used capacity / total
+    /// capacity) reported a number that barely moves and doesn't correspond to what "Disk Usage"
+    /// looks like anywhere else in Windows, which is what a user comparing against Task Manager
+    /// actually expects. "% Idle Time" is the standard PhysicalDisk counter for this (Resource
+    /// Monitor derives its own Disk Active Time the same way) — active% is just its complement.
+    /// The counter instance is kept alive for the process lifetime, not recreated per call, for the
+    /// same reason the GPU counters are: a freshly constructed counter's first NextValue() has no
+    /// prior sample to diff against and would otherwise look like 100% (fully idle -> 0% active)
+    /// forever if reset every poll.
+    /// </summary>
+    private double? SampleDiskActivePercent()
+    {
+        try
+        {
+            _diskIdleTimeCounter ??= new PerformanceCounter("PhysicalDisk", "% Idle Time", "_Total", readOnly: true);
+            var idlePercent = _diskIdleTimeCounter.NextValue();
+
+            if (!_diskCounterPrimed)
+            {
+                _diskCounterPrimed = true;
+                return null; // this first read is the priming sample, not a real one
+            }
+
+            return Math.Clamp(100 - idlePercent, 0, 100);
+        }
+        catch (InvalidOperationException)
+        {
+            return null; // "PhysicalDisk" category/instance not present
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>NVIDIA via nvidia-smi first (works identically across OSes); otherwise falls back to the
     /// "GPU Engine" performance counter category, which Windows populates for any vendor's driver (AMD, Intel).</summary>
@@ -33,9 +141,16 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
     {
         try
         {
-            // GPU Engine instances appear/disappear as processes start/stop using the GPU,
-            // so the instance list is periodically refreshed rather than read once.
-            if (_gpuEngineCounters is null || DateTime.UtcNow - _gpuCountersRefreshedAt > TimeSpan.FromSeconds(10))
+            // GPU Engine instances appear/disappear as processes start/stop using the GPU, so the
+            // instance list is periodically refreshed — but much less often than callers actually
+            // poll (AppSettings' sensor push runs every 30s). A freshly (re)created counter's first
+            // NextValue() has no prior sample to diff against and returns null by design, so a
+            // refresh window shorter than the polling interval — this used to be 10s — meant every
+            // single poll recreated the counters and got null forever, never actually reporting GPU
+            // usage. Keeping the same counter instances alive across many polls, and only refreshing
+            // the list occasionally to catch new/removed GPU processes, is what lets NextValue() see
+            // a real elapsed-time delta on the (very common) second-and-later call.
+            if (_gpuEngineCounters is null || DateTime.UtcNow - _gpuCountersRefreshedAt > TimeSpan.FromMinutes(5))
             {
                 foreach (var counter in _gpuEngineCounters ?? Enumerable.Empty<PerformanceCounter>())
                     counter.Dispose();

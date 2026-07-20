@@ -32,6 +32,14 @@ public sealed class HaClient : IAsyncDisposable
     public event Action<HaConnectionState>? ConnectionStateChanged;
     public event Action<HaNotification>? NotificationReceived;
 
+    /// <summary>
+    /// A "reverse control" push notification whose message starts with "command_" — this app's own
+    /// convention (not the official Companion apps' command set, which is mobile-specific) for
+    /// letting an HA automation act on this machine instead of just showing a notification. Raised
+    /// instead of <see cref="NotificationReceived"/>, never both, for the same incoming message.
+    /// </summary>
+    public event Action<HaRemoteCommand>? CommandReceived;
+
     public HaConnectionState ConnectionState { get; private set; } = HaConnectionState.Disconnected;
 
     /// <summary>The Home Assistant Core version, from the "ha_version" field HA includes in its auth_ok response — works for every installation type, unlike the Supervisor-only fields in <see cref="GetInstanceInfoAsync"/>.</summary>
@@ -384,8 +392,23 @@ public sealed class HaClient : IAsyncDisposable
         var message = AsString(eventObj["message"]);
         if (message is null) return; // not a real notification (e.g. a channel control message)
 
-        var title = AsString(eventObj["title"]);
         var data = eventObj["data"] as JsonObject;
+
+        // "command_*" is this app's own convention for a headless, HA -> app instruction (mute,
+        // set volume, ...) piggybacked on the same notify.mobile_app_<device> channel used for
+        // real notifications — recognized here, before anything gets shown to the user.
+        if (message.StartsWith("command_", StringComparison.OrdinalIgnoreCase))
+        {
+            var volumeLevel = data?["volume_level"] is JsonValue volumeLevelNode && volumeLevelNode.TryGetValue<double>(out var vl) ? vl : (double?)null;
+            CommandReceived?.Invoke(new HaRemoteCommand(message, volumeLevel));
+
+            var commandConfirmId = AsString(eventObj["hass_confirm_id"]);
+            if (commandConfirmId is not null)
+                _ = SendConfirmAsync(commandConfirmId);
+            return;
+        }
+
+        var title = AsString(eventObj["title"]);
 
         var actions = data?["actions"]?.AsArray()
             .OfType<JsonObject>()

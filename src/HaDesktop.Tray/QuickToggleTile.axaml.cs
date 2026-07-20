@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using HaDesktop.Core.Storage;
 
 namespace HaDesktop.Tray;
 
@@ -92,7 +93,7 @@ public partial class QuickToggleTile : UserControl
     public void SetCornerRadius(double radius) =>
         this.FindControl<ToggleButton>("Toggle")!.CornerRadius = new Avalonia.CornerRadius(radius);
 
-    public void SetWide(bool wide) => Width = wide ? 184 : 88;
+    public void SetSize(TileSize size) => Width = size == TileSize.Wide ? 184 : 88;
 
     private void OnClick(object? sender, RoutedEventArgs e)
     {

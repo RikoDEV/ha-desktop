@@ -57,13 +57,18 @@
                 <ContentControl Grid.Row="1" Name="WeatherHost" IsVisible="False" />
                 <ContentControl Grid.Row="2" Name="MediaPlayerHost" IsVisible="False" />
                 <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl Name="TileList">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel Orientation="Horizontal" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                    </ItemsControl>
+                    <!--
+                        A plain Grid, not a WrapPanel — tiles now carry an explicit stored
+                        (Row, Col) from the layout editor (drag-and-drop position, Wide/Group
+                        spans), so placement has to be addressable by cell rather than flowing
+                        implicitly. Columns are fixed at 3 (matching TileLayoutCompactor.ColumnCount
+                        and each tile's 88px width + 4px margin on both sides = 96px/column);
+                        RowDefinitions are rebuilt in code each refresh since the row count is dynamic.
+                    -->
+                    <Panel>
+                        <Grid Name="TileGrid" ColumnDefinitions="96,96,96" />
+                        <ContentControl Name="EmptyStateHost" IsVisible="False" />
+                    </Panel>
                 </ScrollViewer>
             </Grid>
         </Border>

@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using HaDesktop.Core.Storage;
 
 namespace HaDesktop.Tray;
 
@@ -30,5 +31,5 @@ public partial class SensorTile : UserControl
     public void SetCornerRadius(double radius) =>
         this.FindControl<Border>("RootBorder")!.CornerRadius = new Avalonia.CornerRadius(radius);
 
-    public void SetWide(bool wide) => Width = wide ? 184 : 88;
+    public void SetSize(TileSize size) => Width = size == TileSize.Wide ? 184 : 88;
 }

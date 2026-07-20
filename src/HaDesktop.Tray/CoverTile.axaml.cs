@@ -4,6 +4,7 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using HaDesktop.Core.Ha;
+using HaDesktop.Core.Storage;
 using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
@@ -76,7 +77,7 @@ public partial class CoverTile : UserControl
     public void SetCornerRadius(double radius) =>
         this.FindControl<Border>("RootBorder")!.CornerRadius = new Avalonia.CornerRadius(radius);
 
-    public void SetWide(bool wide) => Width = wide ? 184 : 88;
+    public void SetSize(TileSize size) => Width = size == TileSize.Wide ? 184 : 88;
 
     private void OnOpenClicked(object? sender, RoutedEventArgs e) => OpenRequested?.Invoke(this, EventArgs.Empty);
     private void OnStopClicked(object? sender, RoutedEventArgs e) => StopRequested?.Invoke(this, EventArgs.Empty);

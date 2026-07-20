@@ -9,4 +9,9 @@ public sealed record SensorSnapshot(
     double? UptimeHours,
     string? ActiveWindowTitle,
     double? GpuPercent,
-    double? NetworkMbps);
+    double? NetworkMbps,
+    double? StoragePercent = null,
+    double? DiskThroughputMbps = null,
+    bool? IsSessionLocked = null,
+    double? VolumePercent = null,
+    bool? IsMuted = null);

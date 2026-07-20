@@ -36,6 +36,9 @@ public partial class FlyoutWindow : Window
     private readonly Dictionary<string, CoverTile> _coverTilesByEntityId = new();
     private readonly Dictionary<string, SensorTile> _sensorTilesByEntityId = new();
     private readonly Dictionary<string, CameraTile> _cameraTilesByEntityId = new();
+    // Keyed by *child* entity id, not the group's own synthetic id — a state_changed event only
+    // ever names a real entity, so this is what OnEntityStateChanged can actually look up.
+    private readonly Dictionary<string, GroupTile> _groupTilesByChildEntityId = new();
     private readonly Dictionary<string, TileConfig> _tileConfigsByEntityId = new();
     private readonly WeatherWidget _weatherWidget = new();
     private readonly MediaPlayerWidget _mediaPlayerWidget = new();
@@ -72,6 +75,27 @@ public partial class FlyoutWindow : Window
 
     private int _tilesRefreshToken;
 
+    private void ClearTileState()
+    {
+        var grid = this.FindControl<Grid>("TileGrid")!;
+        grid.Children.Clear();
+        grid.RowDefinitions.Clear();
+        _toggleTilesByEntityId.Clear();
+        _coverTilesByEntityId.Clear();
+        _sensorTilesByEntityId.Clear();
+        _cameraTilesByEntityId.Clear();
+        _groupTilesByChildEntityId.Clear();
+        _tileConfigsByEntityId.Clear();
+    }
+
+    private void ShowEmptyState(string icon, string title, string subtitle, bool showSettingsButton)
+    {
+        this.FindControl<Grid>("TileGrid")!.IsVisible = false;
+        var host = this.FindControl<ContentControl>("EmptyStateHost")!;
+        host.Content = BuildEmptyState(icon, title, subtitle, showSettingsButton);
+        host.IsVisible = true;
+    }
+
     private async Task RefreshTilesAsync()
     {
         // AppSettings.ConnectionChanged fires for many unrelated reasons (any settings
@@ -81,22 +105,16 @@ public partial class FlyoutWindow : Window
         // duplicate tile instances for the same entity, only one of which a click/state
         // update would ever touch, making toggles look like they silently do nothing.
         var myToken = ++_tilesRefreshToken;
-        var list = this.FindControl<ItemsControl>("TileList")!;
 
         var client = AppSettings.Client;
         if (client is null)
         {
             if (myToken != _tilesRefreshToken) return;
-            list.Items.Clear();
-            _toggleTilesByEntityId.Clear();
-            _coverTilesByEntityId.Clear();
-            _sensorTilesByEntityId.Clear();
-            _cameraTilesByEntityId.Clear();
-            _tileConfigsByEntityId.Clear();
+            ClearTileState();
             _lastKnownStates.Clear();
             HideWeatherWidget();
             HideMediaPlayerWidget();
-            list.Items.Add(BuildEmptyState("🔌", Loc.Instance.Tr("Flyout.NotConnectedTitle"), Loc.Instance.Tr("Flyout.NotConnectedSubtitle"), showSettingsButton: true));
+            ShowEmptyState("🔌", Loc.Instance.Tr("Flyout.NotConnectedTitle"), Loc.Instance.Tr("Flyout.NotConnectedSubtitle"), showSettingsButton: true);
             return;
         }
 
@@ -111,27 +129,17 @@ public partial class FlyoutWindow : Window
         catch
         {
             if (myToken != _tilesRefreshToken) return;
-            list.Items.Clear();
-            _toggleTilesByEntityId.Clear();
-            _coverTilesByEntityId.Clear();
-            _sensorTilesByEntityId.Clear();
-            _cameraTilesByEntityId.Clear();
-            _tileConfigsByEntityId.Clear();
+            ClearTileState();
             _lastKnownStates.Clear();
             HideWeatherWidget();
             HideMediaPlayerWidget();
-            list.Items.Add(BuildEmptyState("⚠", Loc.Instance.Tr("Flyout.ConnectionErrorTitle"), Loc.Instance.Tr("Flyout.ConnectionErrorSubtitle"), showSettingsButton: true));
+            ShowEmptyState("⚠", Loc.Instance.Tr("Flyout.ConnectionErrorTitle"), Loc.Instance.Tr("Flyout.ConnectionErrorSubtitle"), showSettingsButton: true);
             return;
         }
 
         if (myToken != _tilesRefreshToken) return; // superseded by a later call while we were awaiting
 
-        list.Items.Clear();
-        _toggleTilesByEntityId.Clear();
-        _coverTilesByEntityId.Clear();
-        _sensorTilesByEntityId.Clear();
-        _cameraTilesByEntityId.Clear();
-        _tileConfigsByEntityId.Clear();
+        ClearTileState();
 
         var byId = states.ToDictionary(s => s.EntityId);
         _lastKnownStates.Clear();
@@ -139,26 +147,100 @@ public partial class FlyoutWindow : Window
         UpdateWeatherWidget(byId, client);
         UpdateMediaPlayerWidget(byId, client);
 
-        List<(HaEntityState State, TileConfig Config)> controllable = AppSettings.SelectedTiles.Count > 0
-            // User has picked specific tiles in Settings — show exactly those, in their chosen order, with any overrides.
-            ? AppSettings.SelectedTiles.Where(t => byId.ContainsKey(t.EntityId)).Select(t => (byId[t.EntityId], t)).ToList()
+        List<TileConfig> configs = AppSettings.SelectedTiles.Count > 0
+            // User has picked specific tiles in Settings — show exactly those, at their chosen positions/sizes.
+            ? AppSettings.SelectedTiles
             // No selection yet — fall back to a reasonable default so the flyout isn't empty on first connect.
-            : states.Where(s => s.Domain is "light" or "switch" or "cover").Take(8).Select(s => (s, new TileConfig(s.EntityId))).ToList();
+            // Not yet positioned (fresh, ephemeral list), so compacted the same way a persisted list would be.
+            : TileLayoutCompactor.Compact(states.Where(s => s.Domain is "light" or "switch" or "cover").Take(8).Select(s => new TileConfig(s.EntityId)).ToList());
 
-        foreach (var (state, config) in controllable)
+        var grid = this.FindControl<Grid>("TileGrid")!;
+        var maxRow = 0;
+        var builtAny = false;
+
+        foreach (var config in configs)
         {
-            _tileConfigsByEntityId[state.EntityId] = config;
-            list.Items.Add(state.Domain switch
-            {
-                "cover" => BuildCoverTile(state, config, client),
-                "sensor" => BuildSensorTile(state, config),
-                "camera" => BuildCameraTile(state, config, client),
-                _ => BuildToggleTile(state, config, client),
-            });
+            var tile = config.Size == TileSize.Group
+                ? BuildGroupTile(config, byId, client)
+                : byId.TryGetValue(config.EntityId, out var state)
+                    ? state.Domain switch
+                    {
+                        "cover" => BuildCoverTile(state, config, client),
+                        "sensor" => BuildSensorTile(state, config),
+                        "camera" => BuildCameraTile(state, config, client),
+                        _ => BuildToggleTile(state, config, client),
+                    }
+                    : null;
+
+            if (tile is null) continue; // entity vanished from HA (or an empty/orphaned group) since last selection
+
+            _tileConfigsByEntityId[config.EntityId] = config;
+
+            var rowSpan = TileLayoutCompactor.RowSpanFor(config.Size);
+            Grid.SetRow(tile, config.Row);
+            Grid.SetColumn(tile, config.Col);
+            Grid.SetRowSpan(tile, rowSpan);
+            Grid.SetColumnSpan(tile, TileLayoutCompactor.ColSpanFor(config.Size));
+            grid.Children.Add(tile);
+
+            maxRow = Math.Max(maxRow, config.Row + rowSpan);
+            builtAny = true;
         }
 
-        if (list.Items.Count == 0)
-            list.Items.Add(BuildEmptyState("🏠", Loc.Instance.Tr("Flyout.NoEntitiesTitle"), Loc.Instance.Tr("Flyout.NoEntitiesSubtitle"), showSettingsButton: false));
+        for (var i = 0; i < maxRow; i++)
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+
+        if (!builtAny)
+        {
+            ShowEmptyState("🏠", Loc.Instance.Tr("Flyout.NoEntitiesTitle"), Loc.Instance.Tr("Flyout.NoEntitiesSubtitle"), showSettingsButton: false);
+            return;
+        }
+
+        grid.IsVisible = true;
+        this.FindControl<ContentControl>("EmptyStateHost")!.IsVisible = false;
+    }
+
+    private Control? BuildGroupTile(TileConfig config, Dictionary<string, HaEntityState> byId, HaClient client)
+    {
+        if (config.GroupEntityIds is not { Count: > 0 } ids) return null;
+
+        var entities = new List<(string EntityId, HaEntityState State)>();
+        foreach (var id in ids)
+            if (byId.TryGetValue(id, out var state)) entities.Add((id, state));
+
+        if (entities.Count == 0) return null;
+
+        var tile = new GroupTile { GroupId = config.EntityId };
+        tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
+        tile.SetQuadrants(entities);
+        tile.QuadrantActionRequested += async (_, entityId) =>
+        {
+            if (byId.TryGetValue(entityId, out var state))
+                await PerformQuickActionAsync(client, state);
+        };
+
+        foreach (var id in ids)
+            _groupTilesByChildEntityId[id] = tile;
+
+        return tile;
+    }
+
+    /// <summary>The same toggle-or-cycle action a standalone tile's click performs, shared with each GroupTile quadrant's tap.</summary>
+    private static async Task PerformQuickActionAsync(HaClient client, HaEntityState state)
+    {
+        try
+        {
+            if (state.Domain == "cover")
+            {
+                var isOpen = state.State is "open" or "opening";
+                await client.CallServiceAsync("cover", isOpen ? "close_cover" : "open_cover", state.EntityId);
+            }
+            else
+            {
+                await client.ToggleAsync(state.EntityId);
+            }
+        }
+        catch { /* best effort — tile resyncs from the next state_changed event */ }
     }
 
     private Control BuildToggleTile(HaEntityState state, TileConfig config, HaClient client)
@@ -170,7 +252,7 @@ public partial class FlyoutWindow : Window
             state.IsOn,
             HaEntityDisplay.LightColorFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
-        tile.SetWide(config.Size == TileSize.Wide);
+        tile.SetSize(config.Size);
         tile.Toggled += async (_, _) =>
         {
             try { await client.ToggleAsync(state.EntityId); }
@@ -189,7 +271,7 @@ public partial class FlyoutWindow : Window
         var tile = new CoverTile { EntityId = state.EntityId };
         tile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
-        tile.SetWide(config.Size == TileSize.Wide);
+        tile.SetSize(config.Size);
         tile.OpenRequested += async (_, _) => await TryCallAsync(client, "cover", "open_cover", state.EntityId);
         tile.StopRequested += async (_, _) => await TryCallAsync(client, "cover", "stop_cover", state.EntityId);
         tile.CloseRequested += async (_, _) => await TryCallAsync(client, "cover", "close_cover", state.EntityId);
@@ -206,7 +288,7 @@ public partial class FlyoutWindow : Window
             config.CustomLabel ?? HaEntityDisplay.LabelFor(state),
             HaEntityDisplay.ValueFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
-        tile.SetWide(config.Size == TileSize.Wide);
+        tile.SetSize(config.Size);
 
         _sensorTilesByEntityId[state.EntityId] = tile;
         return tile;
@@ -217,7 +299,7 @@ public partial class FlyoutWindow : Window
         var tile = new CameraTile { EntityId = state.EntityId };
         tile.SetContent(config.CustomLabel ?? HaEntityDisplay.LabelFor(state), client);
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
-        tile.SetWide(config.Size == TileSize.Wide);
+        tile.SetSize(config.Size);
 
         _cameraTilesByEntityId[state.EntityId] = tile;
         return tile;
@@ -376,8 +458,10 @@ public partial class FlyoutWindow : Window
                 && AppSettings.Client is { } weatherClient)
                 _weatherWidget.SetContent(state, weatherClient, AppSettings.WeatherPrefs);
 
-            if (state.Domain == "media_player")
-                _lastKnownStates[state.EntityId] = state;
+            // Kept fresh for every entity (not just media_player) so a GroupTile's quadrants
+            // for entities it isn't the one currently changing can still be rebuilt from
+            // last-known state below, without a full GetStatesAsync round-trip.
+            _lastKnownStates[state.EntityId] = state;
 
             if (AppSettings.MediaPlayerPrefs.Enabled && state.Domain == "media_player"
                 && AppSettings.Client is { } client && AppSettings.Credentials is { } credentials)
@@ -397,7 +481,22 @@ public partial class FlyoutWindow : Window
                 coverTile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
             else if (_sensorTilesByEntityId.TryGetValue(state.EntityId, out var sensorTile))
                 sensorTile.SetContent(config.CustomIcon ?? HaEntityDisplay.IconFor(state), config.CustomLabel ?? HaEntityDisplay.LabelFor(state), HaEntityDisplay.ValueFor(state));
+            else if (_groupTilesByChildEntityId.TryGetValue(state.EntityId, out var groupTile))
+                RefreshGroupQuadrants(groupTile);
         });
+    }
+
+    private void RefreshGroupQuadrants(GroupTile groupTile)
+    {
+        if (groupTile.GroupId is null) return;
+        if (!_tileConfigsByEntityId.TryGetValue(groupTile.GroupId, out var groupConfig)) return;
+        if (groupConfig.GroupEntityIds is not { } ids) return;
+
+        var entities = new List<(string EntityId, HaEntityState State)>();
+        foreach (var id in ids)
+            if (_lastKnownStates.TryGetValue(id, out var s)) entities.Add((id, s));
+
+        groupTile.SetQuadrants(entities);
     }
 
     public void ToggleVisibility()

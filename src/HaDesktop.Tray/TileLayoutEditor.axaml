@@ -1,0 +1,9 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:HaDesktop.Tray.Localization"
+             x:Class="HaDesktop.Tray.TileLayoutEditor">
+    <StackPanel Spacing="8">
+        <TextBlock Text="{loc:Tr TileEditor.Instructions}" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+        <Canvas Name="LayoutCanvas" Background="Transparent" />
+    </StackPanel>
+</UserControl>

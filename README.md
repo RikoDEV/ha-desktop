@@ -6,17 +6,43 @@ A lightweight system tray client for [Home Assistant](https://www.home-assistant
 
 ## Features
 
-- **Quick-toggle tiles** — pin lights, switches, and other entities to the tray flyout for one-click control, with custom labels, icons, and small/wide sizing.
+- **Quick-toggle tiles** — pin lights, switches, and other entities to the tray flyout for one-click control, with custom labels, icons, and Small/Wide sizing.
+- **Visual tile layout editor** — a drag-and-drop grid editor built into Settings → Tiles: reorder tiles by dragging, resize with a click, and drop one small tile squarely onto another to stack up to 4 entities into a single 2x2 Group tile (drag one back out to split it off again).
 - **Camera tiles** — live snapshots with a detail flyout.
 - **Cover tiles** — open/close/stop controls for blinds, garage doors, etc.
 - **Media player widget** — playback controls for a chosen media player entity.
 - **Weather widget** — current conditions and forecast.
-- **Sensor tiles & system sensor sharing** — optionally publish this PC's CPU, memory, disk, GPU, battery, uptime, network throughput, and active window back to HA as `mobile_app` sensors.
+- **Sensor tiles & system sensor sharing** — optionally publish this PC's metrics back to HA as `mobile_app` sensors: CPU, memory, disk I/O activity, storage capacity used, disk throughput, GPU, battery, uptime, network throughput, active window, session lock state, and system volume/mute.
+- **Remote volume control from HA** — with the volume sensor enabled, an HA automation can mute, unmute, toggle mute, or set this PC's volume by sending a `notify.mobile_app_<device>` call with a `command_volume_*` message (see [Remote commands](#remote-commands-from-ha)).
 - **Native notifications** — subscribes to HA's mobile app push channel and shows notifications using the OS notification center, with an in-app history of the last 10.
 - **Secure login** — signs in via HA's browser-based OAuth (loopback redirect, RFC 8252), the same flow HA's official mobile apps use. No long-lived access tokens are pasted in by hand.
 - **Persistent session** — the OAuth refresh token is stored in the OS credential store (Windows Credential Manager, macOS Keychain, or the Linux equivalent) and access tokens are refreshed automatically before they expire.
 - **Autostart** — optional launch on login, per-platform.
 - **Cross-platform** — runs on Windows, macOS, and Linux (Linux tray support via D-Bus).
+
+## Remote commands from HA
+
+Most sensor data flows one way (PC → HA), but system volume is the exception: with the **System volume** sensor enabled (Settings → Sensors), HA can also control it. This isn't a separate entity or service — it piggybacks on the same `notify.mobile_app_<device_slug>` channel already used for push notifications, using a `command_*` message that the app recognizes and acts on locally instead of showing a notification.
+
+Mute, unmute, or toggle mute:
+
+```yaml
+service: notify.mobile_app_<device_slug>
+data:
+  message: "command_volume_mute"        # or command_volume_unmute / command_volume_toggle_mute
+```
+
+Set an exact volume level (0-100):
+
+```yaml
+service: notify.mobile_app_<device_slug>
+data:
+  message: "command_volume_set"
+  data:
+    volume_level: 40
+```
+
+`<device_slug>` is the device name set in Settings → Sensors, slugified (shown right below that field in the app). Currently implemented on Windows only.
 
 ## Architecture
 

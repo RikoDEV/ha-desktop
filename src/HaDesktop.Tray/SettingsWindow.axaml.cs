@@ -25,6 +25,8 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
 
+        this.FindControl<ContentControl>("TileEditorHost")!.Content = new TileLayoutEditor();
+
         UpdateConnectionUi();
         LoadSensorUi();
         LoadAppearanceUi();
@@ -34,6 +36,7 @@ public partial class SettingsWindow : Window
         _ = LoadAutostartStateAsync();
         _ = LoadWeatherUiAsync();
         _ = LoadMediaPlayerUiAsync();
+        _ = TestGpuAvailabilityAsync();
 
         // Set after InitializeComponent, not via XAML SelectedIndex="0" — that fires
         // SelectionChanged during EndInit, before the window's name scope is fully
@@ -47,7 +50,6 @@ public partial class SettingsWindow : Window
             AppSettings.ConnectionChanged -= OnConnectionChanged;
             Loc.Instance.LanguageChanged -= OnLanguageChangedRefresh;
         };
-        _ = RefreshSelectedTilesAsync();
         _ = RefreshUpdatesThenInstanceInfoAsync();
     }
 
@@ -98,7 +100,6 @@ public partial class SettingsWindow : Window
     private void OnConnectionChanged() => Dispatcher.UIThread.Post(() =>
     {
         UpdateConnectionUi();
-        _ = RefreshSelectedTilesAsync();
         _ = RefreshUpdatesThenInstanceInfoAsync();
     });
 
@@ -114,7 +115,6 @@ public partial class SettingsWindow : Window
         LoadAboutUi();
         LoadNotificationsUi();
         UpdateDeviceSlugPreview(this.FindControl<TextBox>("DeviceNameBox")!.Text?.Trim() is { Length: > 0 } name ? name : AppSettings.SensorPrefs.DeviceName);
-        _ = RefreshSelectedTilesAsync();
         _ = RefreshUpdatesThenInstanceInfoAsync();
     });
 
@@ -277,105 +277,6 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private int _tilesRefreshToken;
-
-    private async Task RefreshSelectedTilesAsync()
-    {
-        // AppSettings.ConnectionChanged fires for several unrelated reasons (tile edits,
-        // weather/appearance changes, reconnects) and this method awaits a network call,
-        // so overlapping calls are routine, not exceptional. Without this guard, an older
-        // call resuming after a newer one already rebuilt the list would append its own
-        // rows on top instead of losing the race harmlessly — duplicating every tile.
-        var myToken = ++_tilesRefreshToken;
-        var panel = this.FindControl<StackPanel>("SelectedTilesPanel")!;
-
-        var tiles = AppSettings.SelectedTiles;
-        Dictionary<string, HaEntityState> byId = new();
-        if (tiles.Count > 0 && AppSettings.Client is { } client)
-        {
-            try
-            {
-                byId = (await client.GetStatesAsync()).ToDictionary(s => s.EntityId);
-            }
-            catch { /* fall back to raw entity IDs below */ }
-        }
-
-        if (myToken != _tilesRefreshToken) return; // superseded by a later call while we were awaiting
-
-        panel.Children.Clear();
-        if (tiles.Count == 0)
-        {
-            panel.Children.Add(new TextBlock { Text = Loc.Instance.Tr("Tiles.NoTilesChosen"), FontSize = 12, Opacity = 0.6 });
-            return;
-        }
-
-        for (var i = 0; i < tiles.Count; i++)
-        {
-            var config = tiles[i];
-            var defaultIconKey = "circle";
-            var defaultLabel = config.EntityId;
-            if (byId.TryGetValue(config.EntityId, out var state))
-            {
-                defaultIconKey = HaEntityDisplay.IconFor(state);
-                defaultLabel = HaEntityDisplay.LabelFor(state);
-            }
-
-            var iconKey = config.CustomIcon ?? defaultIconKey;
-            var label = config.CustomLabel ?? defaultLabel;
-
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto,Auto") };
-            row.Children.Add(new PathIcon { Data = Geometry.Parse(TileIcons.PathFor(iconKey)), Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Avalonia.Thickness(0, 0, 4, 0), [Grid.ColumnProperty] = 0 });
-            row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, [Grid.ColumnProperty] = 1 });
-
-            var sizeButton = NewRowActionButton(config.Size == TileSize.Wide ? "W" : "S", 2);
-            ToolTip.SetTip(sizeButton, Loc.Instance.Tr("Tiles.ToggleSizeTooltip"));
-            sizeButton.Click += async (_, _) => await AppSettings.SetTileSizeAsync(
-                config.EntityId, config.Size == TileSize.Wide ? TileSize.Small : TileSize.Wide);
-            row.Children.Add(sizeButton);
-
-            var upButton = NewRowActionButton("↑", 3);
-            upButton.IsEnabled = i > 0;
-            upButton.Click += async (_, _) => await AppSettings.MoveTileAsync(config.EntityId, -1);
-            row.Children.Add(upButton);
-
-            var downButton = NewRowActionButton("↓", 4);
-            downButton.IsEnabled = i < tiles.Count - 1;
-            downButton.Click += async (_, _) => await AppSettings.MoveTileAsync(config.EntityId, 1);
-            row.Children.Add(downButton);
-
-            var editButton = NewRowActionButton(new PathIcon { Data = Geometry.Parse(TileIcons.PathFor("pencil")), Width = 13, Height = 13 }, 5);
-            ToolTip.SetTip(editButton, Loc.Instance.Tr("Tiles.RenameTooltip"));
-            editButton.Click += (_, _) => TileEditFlyout.Show(
-                editButton, config.CustomLabel, config.CustomIcon, defaultLabel, defaultIconKey,
-                async (newLabel, newIcon) => await AppSettings.UpdateTileAsync(config.EntityId, newLabel, newIcon));
-            row.Children.Add(editButton);
-
-            var removeButton = NewRowActionButton("✕", 6);
-            removeButton.Click += async (_, _) => await RemoveTileAsync(config.EntityId);
-            row.Children.Add(removeButton);
-
-            panel.Children.Add(row);
-        }
-    }
-
-    private async Task RemoveTileAsync(string entityId)
-    {
-        var updated = AppSettings.SelectedTiles.Where(t => t.EntityId != entityId).ToList();
-        await AppSettings.SetSelectedTilesAsync(updated);
-    }
-
-    /// <summary>Fixed-size icon/glyph button for a tile row's action buttons — a mix of text glyphs ("↑", "✕") and a PathIcon (edit) previously auto-sized differently and looked inconsistent side by side.</summary>
-    private static Button NewRowActionButton(object content, int column) => new()
-    {
-        Content = content,
-        Width = 28,
-        Height = 28,
-        Padding = new Avalonia.Thickness(0),
-        HorizontalContentAlignment = HorizontalAlignment.Center,
-        VerticalContentAlignment = VerticalAlignment.Center,
-        [Grid.ColumnProperty] = column,
-    };
-
     private async Task LoadAutostartStateAsync()
     {
         var isEnabled = await AutostartManager.Current.IsEnabledAsync();
@@ -439,19 +340,6 @@ public partial class SettingsWindow : Window
     {
         await AppSettings.SignOutAsync();
         // UpdateConnectionUi() runs via the ConnectionChanged event this raises.
-    }
-
-    private void OnChooseTilesClicked(object? sender, RoutedEventArgs e)
-    {
-        if (AppSettings.Client is null)
-        {
-            var status = this.FindControl<TextBlock>("StatusText")!;
-            status.Text = Loc.Instance.Tr("Connection.SignInFirst");
-            status.Foreground = Brushes.OrangeRed;
-            return;
-        }
-
-        new EntityPickerWindow().Show();
     }
 
     private bool _suppressWeatherEvents;
@@ -641,7 +529,48 @@ public partial class SettingsWindow : Window
     {
         "ShareCpuCheckBox", "ShareMemoryCheckBox", "ShareBatteryCheckBox", "ShareDiskCheckBox",
         "ShareUptimeCheckBox", "ShareActiveWindowCheckBox", "ShareGpuCheckBox", "ShareNetworkCheckBox",
+        "ShareStorageCheckBox", "ShareDiskThroughputCheckBox", "ShareSessionLockCheckBox", "ShareVolumeCheckBox",
     };
+
+    // Assumed available until TestGpuAvailabilityAsync finishes, so the toggle doesn't flash
+    // disabled-then-enabled on the common case where GPU sensing does work.
+    private bool _gpuAvailable = true;
+
+    /// <summary>
+    /// Samples the local GPU collector to find out whether this machine can actually report GPU
+    /// usage at all, rather than just assuming it can and letting the toggle silently do nothing —
+    /// the "GPU Engine" performance-counter path (used for non-NVIDIA GPUs) always returns null on
+    /// its very first sample by design (it has no prior value yet to diff against), so a second
+    /// sample a moment later is needed before concluding it's genuinely unavailable.
+    /// </summary>
+    private async Task TestGpuAvailabilityAsync()
+    {
+        try
+        {
+            var first = await SystemSensorCollector.Current.CollectAsync();
+            _gpuAvailable = first.GpuPercent is not null;
+
+            if (!_gpuAvailable)
+            {
+                await Task.Delay(300);
+                var second = await SystemSensorCollector.Current.CollectAsync();
+                _gpuAvailable = second.GpuPercent is not null;
+            }
+        }
+        catch
+        {
+            _gpuAvailable = false; // best effort — if sampling itself throws, treat GPU sensing as unavailable
+        }
+
+        if (!_gpuAvailable && AppSettings.SensorPrefs.ShareGpu)
+        {
+            this.FindControl<ToggleSwitch>("ShareGpuCheckBox")!.IsChecked = false;
+            await SaveSensorPrefsAsync();
+        }
+
+        this.FindControl<TextBlock>("GpuUnavailableNote")!.IsVisible = !_gpuAvailable;
+        UpdateSensorRowsEnabled(this.FindControl<ToggleSwitch>("SensorSharingMasterCheckBox")!.IsChecked == true);
+    }
 
     private void LoadSensorUi()
     {
@@ -652,19 +581,26 @@ public partial class SettingsWindow : Window
         this.FindControl<ToggleSwitch>("ShareMemoryCheckBox")!.IsChecked = prefs.ShareMemory;
         this.FindControl<ToggleSwitch>("ShareBatteryCheckBox")!.IsChecked = prefs.ShareBattery;
         this.FindControl<ToggleSwitch>("ShareDiskCheckBox")!.IsChecked = prefs.ShareDisk;
+        this.FindControl<ToggleSwitch>("ShareStorageCheckBox")!.IsChecked = prefs.ShareStorage;
         this.FindControl<ToggleSwitch>("ShareUptimeCheckBox")!.IsChecked = prefs.ShareUptime;
         this.FindControl<ToggleSwitch>("ShareActiveWindowCheckBox")!.IsChecked = prefs.ShareActiveWindow;
         this.FindControl<ToggleSwitch>("ShareGpuCheckBox")!.IsChecked = prefs.ShareGpu;
         this.FindControl<ToggleSwitch>("ShareNetworkCheckBox")!.IsChecked = prefs.ShareNetwork;
+        this.FindControl<ToggleSwitch>("ShareDiskThroughputCheckBox")!.IsChecked = prefs.ShareDiskThroughput;
+        this.FindControl<ToggleSwitch>("ShareSessionLockCheckBox")!.IsChecked = prefs.ShareSessionLock;
+        this.FindControl<ToggleSwitch>("ShareVolumeCheckBox")!.IsChecked = prefs.ShareVolume;
         UpdateDeviceSlugPreview(prefs.DeviceName);
         UpdateSensorRowsEnabled(prefs.Enabled);
     }
 
-    /// <summary>Greys out the individual sensor toggles when the master switch is off, without touching their saved selections.</summary>
+    /// <summary>Greys out the individual sensor toggles when the master switch is off, without touching their saved selections. The GPU toggle additionally stays force-disabled whenever TestGpuAvailabilityAsync found no usable GPU sensor on this machine, regardless of the master switch.</summary>
     private void UpdateSensorRowsEnabled(bool masterEnabled)
     {
         foreach (var name in SensorToggleNames)
-            this.FindControl<ToggleSwitch>(name)!.IsEnabled = masterEnabled;
+        {
+            var isGpuToggle = name == "ShareGpuCheckBox";
+            this.FindControl<ToggleSwitch>(name)!.IsEnabled = masterEnabled && (!isGpuToggle || _gpuAvailable);
+        }
     }
 
     private async void OnSensorSharingMasterChanged(object? sender, RoutedEventArgs e)
@@ -699,7 +635,11 @@ public partial class SettingsWindow : Window
             this.FindControl<ToggleSwitch>("ShareActiveWindowCheckBox")!.IsChecked == true,
             this.FindControl<ToggleSwitch>("ShareGpuCheckBox")!.IsChecked == true,
             this.FindControl<ToggleSwitch>("ShareNetworkCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("SensorSharingMasterCheckBox")!.IsChecked == true);
+            this.FindControl<ToggleSwitch>("SensorSharingMasterCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareStorageCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareDiskThroughputCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareSessionLockCheckBox")!.IsChecked == true,
+            this.FindControl<ToggleSwitch>("ShareVolumeCheckBox")!.IsChecked == true);
 
         await AppSettings.SetSensorPreferencesAsync(prefs);
     }

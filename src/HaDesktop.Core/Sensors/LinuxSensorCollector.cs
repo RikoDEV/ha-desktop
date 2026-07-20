@@ -15,6 +15,8 @@ public sealed class LinuxSensorCollector : ISystemSensorCollector
         CrossPlatformMetrics.SampleUptimeHours(),
         ActiveWindowTitle: null, // varies too much across X11/Wayland WMs to support generically yet
         GpuPercent: await SampleGpuPercentAsync(),
+        // No separate activity-vs-capacity distinction here (unlike Windows) — DiskPercent above is
+        // already the capacity-based reading, so a second StoragePercent would just duplicate it.
         NetworkMbps: CrossPlatformMetrics.SampleNetworkThroughputMbps());
 
     /// <summary>NVIDIA via nvidia-smi first; otherwise the amdgpu kernel driver's sysfs busy-percent file (AMD only — Intel has no equivalent).</summary>

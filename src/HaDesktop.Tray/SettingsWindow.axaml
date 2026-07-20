@@ -7,7 +7,7 @@
         Icon="avares://HaDesktop.Tray/Assets/tray-icon.ico"
         Width="820" Height="640"
         CanResize="True"
-        MinWidth="680" MinHeight="480"
+        MinWidth="800" MinHeight="480"
         Background="Transparent"
         TransparencyLevelHint="AcrylicBlur, Mica, Blur"
         WindowStartupLocation="CenterScreen">
@@ -102,11 +102,8 @@
                     <ui:SettingsExpander Header="{loc:Tr Tiles.QuickTilesHeader}"
                                           Description="{loc:Tr Tiles.QuickTilesDescription}"
                                           IsExpanded="True">
-                        <ui:SettingsExpander.Footer>
-                            <Button Name="ChooseTilesButton" Content="{loc:Tr Tiles.ChooseTiles}" Click="OnChooseTilesClicked" />
-                        </ui:SettingsExpander.Footer>
                         <ui:SettingsExpander.Items>
-                            <StackPanel Name="SelectedTilesPanel" Spacing="6" Margin="16,8" />
+                            <ContentControl Name="TileEditorHost" Margin="16,8" HorizontalContentAlignment="Stretch" />
                         </ui:SettingsExpander.Items>
                     </ui:SettingsExpander>
 
@@ -221,6 +218,12 @@
                                         <ToggleSwitch Grid.Column="1" Name="ShareDiskCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
                                     <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.StorageUsage}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareStorageCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <TextBlock Text="{loc:Tr Sensors.StorageUsageNote}"
+                                                FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                                    <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Uptime}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareUptimeCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
@@ -236,10 +239,26 @@
                                     </Grid>
                                     <TextBlock Text="{loc:Tr Sensors.GpuNote}"
                                                 FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                                    <TextBlock Name="GpuUnavailableNote" Text="{loc:Tr Sensors.GpuUnavailableNote}"
+                                                FontSize="11" Foreground="OrangeRed" TextWrapping="Wrap" IsVisible="False" />
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Network}" VerticalAlignment="Center" />
                                         <ToggleSwitch Grid.Column="1" Name="ShareNetworkCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
                                     </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.DiskThroughput}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareDiskThroughputCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.SessionLock}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareSessionLockCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{loc:Tr Sensors.Volume}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1" Name="ShareVolumeCheckBox" OnContent="" OffContent="" Click="OnSensorToggleChanged" />
+                                    </Grid>
+                                    <TextBlock Text="{loc:Tr Sensors.VolumeCommandNote}"
+                                                FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
                                 </StackPanel>
                             </StackPanel>
                         </ui:SettingsExpander.Items>

@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.GroupTile"
+             Width="184" Height="160" Margin="4">
+    <Border Name="RootBorder" CornerRadius="6" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="4">
+        <Grid Name="QuadrantGrid" ColumnDefinitions="*,*" RowDefinitions="*,*" ColumnSpacing="4" RowSpacing="4" />
+    </Border>
+</UserControl>

@@ -48,7 +48,13 @@ public static class AppSettings
 
     public static async Task LoadLocalPreferencesAsync()
     {
-        SelectedTiles = await TilePreferencesStore.LoadAsync();
+        var loadedTiles = await TilePreferencesStore.LoadAsync();
+        SelectedTiles = TileLayoutCompactor.Defragment(loadedTiles);
+        // Persist immediately if defragmenting actually changed anything, so a legacy tiles.json
+        // (unpositioned entirely, or with gaps left over from an older version) is normalized
+        // once rather than being recomputed — harmlessly, but pointlessly — on every load.
+        if (loadedTiles.Count > 0)
+            await TilePreferencesStore.SaveAsync(SelectedTiles);
         SensorPrefs = await SensorPreferencesStore.LoadAsync();
         Appearance = await AppearancePreferencesStore.LoadAsync();
         WeatherPrefs = await WeatherPreferencesStore.LoadAsync();
@@ -88,8 +94,11 @@ public static class AppSettings
 
     public static async Task SetSelectedTilesAsync(List<TileConfig> tiles)
     {
-        SelectedTiles = tiles;
-        await TilePreferencesStore.SaveAsync(tiles);
+        // Defragmented here, not just on load, so every mutation path (EntityPickerWindow adding
+        // a bare new TileConfig, a resize/group-merge that leaves a hole or an overlap, removing
+        // a tile, etc.) always ends up gap-free without each call site needing grid awareness.
+        SelectedTiles = TileLayoutCompactor.Defragment(tiles);
+        await TilePreferencesStore.SaveAsync(SelectedTiles);
         ConnectionChanged?.Invoke();
     }
 
@@ -103,18 +112,82 @@ public static class AppSettings
 
     public static async Task SetTileSizeAsync(string entityId, TileSize size)
     {
+        // Growing a tile (Small -> Wide) can run it off the grid's right edge or straight into a
+        // neighbor's cell — SetSelectedTilesAsync's Defragment always fully re-packs the grid
+        // gap-free, so it resolves that (and any hole left behind by shrinking) automatically.
         var updated = SelectedTiles.Select(t => t.EntityId == entityId ? t with { Size = size } : t).ToList();
         await SetSelectedTilesAsync(updated);
     }
 
-    public static async Task MoveTileAsync(string entityId, int direction)
+    /// <summary>
+    /// Moves a tile to a new spot in list order — since Defragment always derives every tile's grid
+    /// position purely from where it sits in this list, this is the one operation the layout editor's
+    /// drag-to-reorder ultimately reduces to (whether dropped in empty space or next to another tile).
+    /// </summary>
+    public static async Task MoveTileToIndexAsync(string entityId, int index)
     {
-        var index = SelectedTiles.FindIndex(t => t.EntityId == entityId);
-        var newIndex = index + direction;
-        if (index < 0 || newIndex < 0 || newIndex >= SelectedTiles.Count) return;
+        var moved = SelectedTiles.FirstOrDefault(t => t.EntityId == entityId);
+        if (moved is null) return;
 
-        var updated = new List<TileConfig>(SelectedTiles);
-        (updated[index], updated[newIndex]) = (updated[newIndex], updated[index]);
+        var others = SelectedTiles.Where(t => t.EntityId != entityId).ToList();
+        others.Insert(Math.Clamp(index, 0, others.Count), moved);
+        await SetSelectedTilesAsync(others);
+    }
+
+    /// <summary>Merges two small tiles into a new 2x2 Group tile at the target's former position — dragging one small tile onto another.</summary>
+    public static async Task CreateGroupAsync(string targetEntityId, string draggedEntityId)
+    {
+        var target = SelectedTiles.FirstOrDefault(t => t.EntityId == targetEntityId);
+        if (target is null) return;
+
+        var group = TileConfig.NewGroup(targetEntityId, draggedEntityId, target.Row, target.Col);
+        var updated = SelectedTiles
+            .Where(t => t.EntityId != targetEntityId && t.EntityId != draggedEntityId)
+            .Append(group)
+            .ToList();
+        await SetSelectedTilesAsync(updated);
+    }
+
+    /// <summary>Adds one more entity into an existing Group's quadrants (up to 4) — dragging a small tile onto a Group with room left.</summary>
+    public static async Task AddToGroupAsync(string groupId, string entityId)
+    {
+        var group = SelectedTiles.FirstOrDefault(t => t.EntityId == groupId);
+        if (group?.GroupEntityIds is not { Count: < 4 } members) return;
+
+        var updated = SelectedTiles
+            .Where(t => t.EntityId != entityId)
+            .Select(t => t.EntityId == groupId ? t with { GroupEntityIds = new List<string>(members) { entityId } } : t)
+            .ToList();
+        await SetSelectedTilesAsync(updated);
+    }
+
+    /// <summary>
+    /// Removes one entity from a Group back onto the main grid as its own Small tile, in the group's
+    /// former list slot — the layout editor's "drag a tile out of a group" gesture calls this first,
+    /// then repositions the freshly-extracted tile whereever it was actually dropped. Dissolves the
+    /// Group entirely (converting the sole remaining entity back to a bare Small TileConfig) once
+    /// only one member is left, or removes the Group outright if it was the last member.
+    /// </summary>
+    public static async Task RemoveFromGroupAsync(string groupId, string entityId)
+    {
+        var group = SelectedTiles.FirstOrDefault(t => t.EntityId == groupId);
+        if (group?.GroupEntityIds is null) return;
+
+        var remaining = group.GroupEntityIds.Where(id => id != entityId).ToList();
+        var updated = SelectedTiles
+            .SelectMany(t =>
+            {
+                if (t.EntityId != groupId) return new[] { t };
+                return remaining.Count switch
+                {
+                    0 => Array.Empty<TileConfig>(),
+                    1 => new[] { new TileConfig(remaining[0]) },
+                    _ => new[] { group with { GroupEntityIds = remaining } },
+                };
+            })
+            .Append(new TileConfig(entityId)) // unpositioned — repositioned right after by the caller
+            .ToList();
+
         await SetSelectedTilesAsync(updated);
     }
 
@@ -258,6 +331,7 @@ public static class AppSettings
         };
 
         client.NotificationReceived += OnNotificationReceived;
+        client.CommandReceived += OnRemoteCommandReceived;
 
         Client = client;
         await client.ConnectAsync();
@@ -341,6 +415,47 @@ public static class AppSettings
 
         if (!NotificationsEnabled) return;
         _ = ShowAndReportActionAsync(notification);
+    }
+
+    /// <summary>
+    /// Executes a "command_volume_*" push notification against the local system audio endpoint.
+    /// Gated on SensorPrefs.ShareVolume — the same toggle that opts into *reading* volume/mute out
+    /// to HA also opts into HA being allowed to *change* it, rather than adding a second toggle for
+    /// what's really one "volume integration" decision. To trigger this from HA:
+    /// <code>
+    /// service: notify.mobile_app_&lt;device_slug&gt;
+    /// data:
+    ///   message: "command_volume_mute"   # or command_volume_unmute / command_volume_toggle_mute
+    /// </code>
+    /// or, to set an exact level:
+    /// <code>
+    /// service: notify.mobile_app_&lt;device_slug&gt;
+    /// data:
+    ///   message: "command_volume_set"
+    ///   data:
+    ///     volume_level: 40
+    /// </code>
+    /// </summary>
+    private static void OnRemoteCommandReceived(HaRemoteCommand command)
+    {
+        if (!SensorPrefs.ShareVolume) return;
+
+        var audio = SystemAudioController.Current;
+        switch (command.Command.ToLowerInvariant())
+        {
+            case "command_volume_mute":
+                audio.SetMute(true);
+                break;
+            case "command_volume_unmute":
+                audio.SetMute(false);
+                break;
+            case "command_volume_toggle_mute":
+                audio.SetMute(!(audio.GetMuted() ?? false));
+                break;
+            case "command_volume_set" when command.VolumeLevel is { } level:
+                audio.SetVolumePercent(level);
+                break;
+        }
     }
 
     /// <summary>
@@ -435,13 +550,24 @@ public static class AppSettings
         if (prefs.ShareBattery) AddPercent("battery", "Battery", snapshot.BatteryPercent, "battery", "mdi:battery");
         if (prefs.ShareDisk) AddPercent("disk", "Disk Usage", snapshot.DiskPercent, null, "mdi:harddisk");
         if (prefs.ShareGpu) AddPercent("gpu", "GPU Usage", snapshot.GpuPercent, null, "mdi:expansion-card");
+        if (prefs.ShareStorage) AddPercent("storage", "Storage Used", snapshot.StoragePercent, null, "mdi:database");
 
         if (prefs.ShareUptime && snapshot.UptimeHours is { } uptime)
             sensors.Add(new MobileAppSensor("uptime", "Uptime", Math.Round(uptime, 1), "mdi:clock-outline", null, "h", "measurement"));
         if (prefs.ShareNetwork && snapshot.NetworkMbps is { } network)
             sensors.Add(new MobileAppSensor("network", "Network Throughput", Math.Round(network, 2), "mdi:network", "data_rate", "Mbit/s", "measurement"));
+        if (prefs.ShareDiskThroughput && snapshot.DiskThroughputMbps is { } diskThroughput)
+            sensors.Add(new MobileAppSensor("disk_throughput", "Disk Throughput", Math.Round(diskThroughput, 2), "mdi:harddisk", "data_rate", "Mbit/s", "measurement"));
         if (prefs.ShareActiveWindow && !string.IsNullOrEmpty(snapshot.ActiveWindowTitle))
             sensors.Add(new MobileAppSensor("active_window", "Active Window", snapshot.ActiveWindowTitle, "mdi:application-outline"));
+        if (prefs.ShareSessionLock && snapshot.IsSessionLocked is { } isLocked)
+            sensors.Add(new MobileAppSensor("session_locked", "Session Locked", isLocked ? "Locked" : "Unlocked", isLocked ? "mdi:lock" : "mdi:lock-open-variant"));
+        if (prefs.ShareVolume)
+        {
+            AddPercent("volume", "System Volume", snapshot.VolumePercent, null, "mdi:volume-high");
+            if (snapshot.IsMuted is { } isMuted)
+                sensors.Add(new MobileAppSensor("muted", "Muted", isMuted ? "Muted" : "Unmuted", isMuted ? "mdi:volume-mute" : "mdi:volume-high"));
+        }
 
         if (sensors.Count == 0) return;
 
