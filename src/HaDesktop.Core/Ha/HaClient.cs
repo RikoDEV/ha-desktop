@@ -225,7 +225,7 @@ public sealed class HaClient : IAsyncDisposable
                 {
                     ["id"] = Interlocked.Increment(ref _nextMessageId),
                     ["type"] = "unsubscribe_events",
-                    ["subscription_id"] = id,
+                    ["subscription"] = id,
                 }, CancellationToken.None).ConfigureAwait(false);
             }
             catch { /* best effort cleanup */ }

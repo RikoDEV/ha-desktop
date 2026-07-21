@@ -62,7 +62,7 @@ public partial class EntityPickerWindow : Window
 
         var selected = new HashSet<string>(AppSettings.SelectedTiles.Select(t => t.EntityId));
         var controllable = states
-            .Where(s => s.Domain is "light" or "switch" or "cover" or "sensor" or "camera")
+            .Where(s => s.Domain is "light" or "switch" or "cover" or "sensor" or "camera" or "climate" or "fan" or "humidifier" or "lawn_mower")
             .OrderBy(HaEntityDisplay.LabelFor, StringComparer.OrdinalIgnoreCase);
 
         foreach (var state in controllable)

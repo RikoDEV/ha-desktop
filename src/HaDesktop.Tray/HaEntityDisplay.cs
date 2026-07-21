@@ -20,6 +20,10 @@ public static class HaEntityDisplay
         "cover" => IconForCover(state),
         "sensor" => IconForSensor(state),
         "camera" => "camera",
+        "climate" => "thermostat",
+        "fan" => "fan",
+        "humidifier" => "humidity",
+        "lawn_mower" => "lawn-mower",
         _ => "circle",
     };
 
@@ -74,6 +78,39 @@ public static class HaEntityDisplay
         }
     }
 
+    /// <summary>A numeric (double) attribute, or null if missing/non-numeric — HaClient parses JSON numbers straight into <see cref="double"/>, never a string.</summary>
+    public static double? NumberAttribute(HaEntityState state, string key) =>
+        state.Attributes.TryGetValue(key, out var v) && v is double d ? d : null;
+
+    /// <summary>
+    /// A string-array attribute (e.g. hvac_modes, preset_modes, available_modes). HaClient
+    /// serializes nested JSON as a raw JSON string rather than a structured value (see
+    /// <see cref="LightColorFor"/>), so this parses e.g. "[\"eco\",\"boost\"]" rather than
+    /// reading a typed array.
+    /// </summary>
+    public static string[] StringListAttribute(HaEntityState state, string key)
+    {
+        if (!state.Attributes.TryGetValue(key, out var raw) || raw is not string json)
+            return Array.Empty<string>();
+
+        try
+        {
+            var array = JsonNode.Parse(json)?.AsArray();
+            return array?.Select(n => n!.GetValue<string>()).ToArray() ?? Array.Empty<string>();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>Title-cases an unrecognized snake/kebab-case value (e.g. a preset_mode or fan_mode with no dedicated translation) into display text, e.g. "away" -> "Away".</summary>
+    public static string Prettify(string value)
+    {
+        var words = value.Replace('_', ' ').Replace('-', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
+    }
+
     public static string LabelFor(HaEntityState state) =>
         state.Attributes.TryGetValue("friendly_name", out var name) && name is string s ? s : state.EntityId;
 
@@ -83,6 +120,75 @@ public static class HaEntityDisplay
         var unit = state.Attributes.TryGetValue("unit_of_measurement", out var u) && u is string us ? us : "";
         return string.IsNullOrEmpty(unit) ? state.State : $"{state.State} {unit}";
     }
+
+    private static readonly Dictionary<string, string> HvacModeKeys = new()
+    {
+        ["off"] = "Climate.Off",
+        ["heat"] = "Climate.Heat",
+        ["cool"] = "Climate.Cool",
+        ["heat_cool"] = "Climate.HeatCool",
+        ["auto"] = "Climate.Auto",
+        ["dry"] = "Climate.Dry",
+        ["fan_only"] = "Climate.FanOnly",
+    };
+
+    /// <summary>Translates a climate.* hvac_mode (e.g. "heat_cool") to display text, falling back to title-casing unknown values.</summary>
+    public static string PrettifyHvacMode(string mode) =>
+        HvacModeKeys.TryGetValue(mode, out var key) ? Loc.Instance.Tr(key) : Prettify(mode);
+
+    /// <summary>A climate.* entity's target (or current, if no target is set) temperature + unit, e.g. "21.5°C".</summary>
+    public static string ClimateTemperatureFor(HaEntityState state)
+    {
+        var temp = state.Attributes.TryGetValue("temperature", out var t) && t is not null ? t
+            : state.Attributes.TryGetValue("current_temperature", out var c) ? c : null;
+        if (temp is null) return "—";
+
+        var unit = state.Attributes.TryGetValue("temperature_unit", out var u) && u is string us ? us : "°";
+        return $"{temp}{unit}";
+    }
+
+    private static readonly Dictionary<string, string> LawnMowerStateKeys = new()
+    {
+        ["mowing"] = "LawnMower.StatusMowing",
+        ["docked"] = "LawnMower.StatusDocked",
+        ["paused"] = "LawnMower.StatusPaused",
+        ["returning"] = "LawnMower.StatusReturning",
+        ["error"] = "LawnMower.StatusError",
+        ["unavailable"] = "LawnMower.StatusUnavailable",
+    };
+
+    /// <summary>Translates a lawn_mower.* state to display text, falling back to title-casing unknown values.</summary>
+    public static string LawnMowerStatusFor(HaEntityState state)
+    {
+        if (LawnMowerStateKeys.TryGetValue(state.State, out var key))
+            return Loc.Instance.Tr(key);
+
+        return PrettifyCondition(state.State);
+    }
+
+    /// <summary>
+    /// A gauge's 0-1 fill fraction for a sensor's current numeric state, or null if the state
+    /// isn't numeric (e.g. "unavailable"). Home Assistant's own gauge card requires min/max to be
+    /// set explicitly per-dashboard-card since sensors don't self-report a range; this app has no
+    /// such per-tile config UI yet, so <see cref="GaugeRangeFor"/> guesses a sensible 0-100 range
+    /// from the unit/device_class instead (percent-like sensors — battery, humidity, CPU load —
+    /// cover the overwhelming majority of real-world gauge use).
+    /// </summary>
+    public static double? GaugeFractionFor(HaEntityState state)
+    {
+        if (!double.TryParse(state.State, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            return null;
+
+        return Math.Clamp(value / 100, 0, 1); // 0-100 range — see summary above
+    }
+
+    /// <summary>Green/yellow/red severity zones, matching Home Assistant's own gauge card defaults (green below 50%, yellow 50-80%, red above 80%).</summary>
+    public static Color GaugeColorFor(double fraction) => fraction switch
+    {
+        >= 0.8 => Color.Parse("#DB4437"),
+        >= 0.5 => Color.Parse("#F4B400"),
+        _ => Color.Parse("#0F9D58"),
+    };
 
     /// <summary>Maps a weather.* entity's condition state (e.g. "partlycloudy") to a <see cref="TileIcons.Paths"/> key.</summary>
     public static string WeatherIconFor(HaEntityState state) => WeatherIconForCondition(state.State);
@@ -119,14 +225,8 @@ public static class HaEntityDisplay
     };
 
     /// <summary>Translates a weather.* condition (e.g. "partlycloudy") to display text, falling back to title-casing unknown values.</summary>
-    public static string PrettifyCondition(string condition)
-    {
-        if (ConditionKeys.TryGetValue(condition, out var key))
-            return Loc.Instance.Tr(key);
-
-        var words = condition.Replace('-', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return string.Join(' ', words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
-    }
+    public static string PrettifyCondition(string condition) =>
+        ConditionKeys.TryGetValue(condition, out var key) ? Loc.Instance.Tr(key) : Prettify(condition);
 
     /// <summary>Current temperature + unit from a weather.* entity's attributes (e.g. "21.5°C").</summary>
     public static string WeatherTemperatureFor(HaEntityState state)

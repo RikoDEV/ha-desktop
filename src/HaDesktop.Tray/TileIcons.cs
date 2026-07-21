@@ -46,6 +46,11 @@ public static class TileIcons
         ["chevron-up"] = "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z",
         ["chevron-down"] = "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z",
         ["stop"] = "M18,18H6V6H18V18Z",
+        ["lawn-mower"] = "M1,14V5H13C18.5,5 23,9.5 23,15V17H20.83C20.42,18.17 19.31,19 18,19C16.69,19 15.58,18.17 15.17,17H10C9.09,18.21 7.64,19 6,19C3.24,19 1,16.76 1,14M6,11C4.34,11 3,12.34 3,14C3,15.66 4.34,17 6,17C7.66,17 9,15.66 9,14C9,12.34 7.66,11 6,11M15,10V12H20.25C19.92,11.27 19.5,10.6 19,10H15Z",
+        ["pause"] = "M14,19H18V5H14M6,19H10V5H6V19Z",
+        ["home"] = "M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z",
+        ["plus"] = "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
+        ["minus"] = "M19,13H5V11H19V13Z",
     };
 
     public static string PathFor(string? key) => key is not null && Paths.TryGetValue(key, out var path) ? path : Paths["circle"];

@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.GaugeTile"
+             Width="88" Height="76" Margin="4">
+    <Border Name="RootBorder" CornerRadius="6" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="6,6,6,4">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="0">
+            <Canvas Name="ArcCanvas" Width="64" Height="34">
+                <Path Name="TrackPath" StrokeThickness="6" StrokeLineCap="Round" Stroke="#33808080" />
+                <Path Name="ValuePath" StrokeThickness="6" StrokeLineCap="Round" />
+                <TextBlock Name="ValueText" FontSize="13" FontWeight="SemiBold" Canvas.Top="14" Width="64" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </Canvas>
+            <TextBlock Name="LabelText" FontSize="10" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" MaxWidth="76" Opacity="0.8" Margin="0,2,0,0" />
+        </StackPanel>
+    </Border>
+</UserControl>

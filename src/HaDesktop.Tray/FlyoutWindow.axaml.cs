@@ -35,7 +35,10 @@ public partial class FlyoutWindow : Window
     private readonly Dictionary<string, QuickToggleTile> _toggleTilesByEntityId = new();
     private readonly Dictionary<string, CoverTile> _coverTilesByEntityId = new();
     private readonly Dictionary<string, SensorTile> _sensorTilesByEntityId = new();
+    private readonly Dictionary<string, GaugeTile> _gaugeTilesByEntityId = new();
     private readonly Dictionary<string, CameraTile> _cameraTilesByEntityId = new();
+    private readonly Dictionary<string, ClimateTile> _climateTilesByEntityId = new();
+    private readonly Dictionary<string, LawnMowerTile> _lawnMowerTilesByEntityId = new();
     // Keyed by *child* entity id, not the group's own synthetic id — a state_changed event only
     // ever names a real entity, so this is what OnEntityStateChanged can actually look up.
     private readonly Dictionary<string, GroupTile> _groupTilesByChildEntityId = new();
@@ -83,7 +86,10 @@ public partial class FlyoutWindow : Window
         _toggleTilesByEntityId.Clear();
         _coverTilesByEntityId.Clear();
         _sensorTilesByEntityId.Clear();
+        _gaugeTilesByEntityId.Clear();
         _cameraTilesByEntityId.Clear();
+        _climateTilesByEntityId.Clear();
+        _lawnMowerTilesByEntityId.Clear();
         _groupTilesByChildEntityId.Clear();
         _tileConfigsByEntityId.Clear();
     }
@@ -166,8 +172,11 @@ public partial class FlyoutWindow : Window
                     ? state.Domain switch
                     {
                         "cover" => BuildCoverTile(state, config, client),
+                        "sensor" when config.IsGauge => BuildGaugeTile(state, config),
                         "sensor" => BuildSensorTile(state, config),
                         "camera" => BuildCameraTile(state, config, client),
+                        "climate" => BuildClimateTile(state, config, client),
+                        "lawn_mower" => BuildLawnMowerTile(state, config, client),
                         _ => BuildToggleTile(state, config, client),
                     }
                     : null;
@@ -261,6 +270,8 @@ public partial class FlyoutWindow : Window
 
         if (state.Domain == "light")
             tile.DetailRequested += (_, _) => LightDetailFlyout.Show(tile, state.EntityId, state, client);
+        else if (state.Domain == "humidifier")
+            tile.DetailRequested += (_, _) => HumidifierDetailFlyout.Show(tile, state.EntityId, state, client);
 
         _toggleTilesByEntityId[state.EntityId] = tile;
         return tile;
@@ -294,6 +305,17 @@ public partial class FlyoutWindow : Window
         return tile;
     }
 
+    private Control BuildGaugeTile(HaEntityState state, TileConfig config)
+    {
+        var tile = new GaugeTile { EntityId = state.EntityId };
+        tile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
+        tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
+        tile.SetSize(config.Size);
+
+        _gaugeTilesByEntityId[state.EntityId] = tile;
+        return tile;
+    }
+
     private Control BuildCameraTile(HaEntityState state, TileConfig config, HaClient client)
     {
         var tile = new CameraTile { EntityId = state.EntityId };
@@ -302,6 +324,34 @@ public partial class FlyoutWindow : Window
         tile.SetSize(config.Size);
 
         _cameraTilesByEntityId[state.EntityId] = tile;
+        return tile;
+    }
+
+    private Control BuildClimateTile(HaEntityState state, TileConfig config, HaClient client)
+    {
+        var tile = new ClimateTile { EntityId = state.EntityId };
+        tile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
+        tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
+        tile.SetSize(config.Size);
+        tile.ModeChangeRequested += async (_, mode) =>
+            await TryCallAsync(client, "climate", "set_hvac_mode", state.EntityId, new System.Text.Json.Nodes.JsonObject { ["hvac_mode"] = mode });
+        tile.DetailRequested += (_, _) => ThermostatDetailFlyout.Show(tile, state.EntityId, state, client);
+
+        _climateTilesByEntityId[state.EntityId] = tile;
+        return tile;
+    }
+
+    private Control BuildLawnMowerTile(HaEntityState state, TileConfig config, HaClient client)
+    {
+        var tile = new LawnMowerTile { EntityId = state.EntityId };
+        tile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
+        tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
+        tile.SetSize(config.Size);
+        tile.StartRequested += async (_, _) => await TryCallAsync(client, "lawn_mower", "start_mowing", state.EntityId);
+        tile.PauseRequested += async (_, _) => await TryCallAsync(client, "lawn_mower", "pause", state.EntityId);
+        tile.DockRequested += async (_, _) => await TryCallAsync(client, "lawn_mower", "dock", state.EntityId);
+
+        _lawnMowerTilesByEntityId[state.EntityId] = tile;
         return tile;
     }
 
@@ -383,9 +433,9 @@ public partial class FlyoutWindow : Window
     private static bool HasNowPlayingData(HaEntityState state) =>
         state.Attributes.ContainsKey("media_title") || state.Attributes.ContainsKey("media_artist") || state.Attributes.ContainsKey("entity_picture");
 
-    private static async Task TryCallAsync(HaClient client, string domain, string service, string entityId)
+    private static async Task TryCallAsync(HaClient client, string domain, string service, string entityId, System.Text.Json.Nodes.JsonObject? extraData = null)
     {
-        try { await client.CallServiceAsync(domain, service, entityId); }
+        try { await client.CallServiceAsync(domain, service, entityId, extraData); }
         catch { /* best effort */ }
     }
 
@@ -481,6 +531,12 @@ public partial class FlyoutWindow : Window
                 coverTile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
             else if (_sensorTilesByEntityId.TryGetValue(state.EntityId, out var sensorTile))
                 sensorTile.SetContent(config.CustomIcon ?? HaEntityDisplay.IconFor(state), config.CustomLabel ?? HaEntityDisplay.LabelFor(state), HaEntityDisplay.ValueFor(state));
+            else if (_gaugeTilesByEntityId.TryGetValue(state.EntityId, out var gaugeTile))
+                gaugeTile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
+            else if (_climateTilesByEntityId.TryGetValue(state.EntityId, out var climateTile))
+                climateTile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
+            else if (_lawnMowerTilesByEntityId.TryGetValue(state.EntityId, out var lawnMowerTile))
+                lawnMowerTile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
             else if (_groupTilesByChildEntityId.TryGetValue(state.EntityId, out var groupTile))
                 RefreshGroupQuadrants(groupTile);
         });

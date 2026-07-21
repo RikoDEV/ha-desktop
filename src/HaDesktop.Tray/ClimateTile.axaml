@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HaDesktop.Tray.ClimateTile"
+             Width="88" Height="76" Margin="4">
+    <Button Name="RootButton" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+            CornerRadius="6" Click="OnClick">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="2">
+            <PathIcon Name="IconIcon" Width="18" Height="18" HorizontalAlignment="Center" />
+            <TextBlock Name="ValueText" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="76" />
+            <TextBlock Name="LabelText" FontSize="10" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" MaxWidth="76" Opacity="0.8" />
+        </StackPanel>
+    </Button>
+</UserControl>

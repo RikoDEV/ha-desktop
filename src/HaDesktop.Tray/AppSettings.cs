@@ -102,10 +102,10 @@ public static class AppSettings
         ConnectionChanged?.Invoke();
     }
 
-    public static async Task UpdateTileAsync(string entityId, string? customLabel, string? customIcon)
+    public static async Task UpdateTileAsync(string entityId, string? customLabel, string? customIcon, bool isGauge = false)
     {
         var updated = SelectedTiles
-            .Select(t => t.EntityId == entityId ? t with { CustomLabel = customLabel, CustomIcon = customIcon } : t)
+            .Select(t => t.EntityId == entityId ? t with { CustomLabel = customLabel, CustomIcon = customIcon, IsGauge = isGauge } : t)
             .ToList();
         await SetSelectedTilesAsync(updated);
     }

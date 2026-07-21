@@ -25,6 +25,10 @@ public static class CameraDetailFlyout
         var timer = new DispatcherTimer { Interval = RefreshInterval };
         timer.Tick += async (_, _) =>
         {
+            // See CameraTile.RefreshSnapshotAsync — skip while disconnected/reconnecting rather
+            // than hammering camera_proxy with a possibly-stale token every 2 seconds.
+            if (client.ConnectionState != HaConnectionState.Connected) return;
+
             var bytes = await client.GetCameraSnapshotAsync(entityId);
             if (bytes is null) return;
             try
@@ -53,6 +57,8 @@ public static class CameraDetailFlyout
 
         async System.Threading.Tasks.Task RefreshOnceAsync()
         {
+            if (client.ConnectionState != HaConnectionState.Connected) return;
+
             var bytes = await client.GetCameraSnapshotAsync(entityId);
             if (bytes is null) return;
             try

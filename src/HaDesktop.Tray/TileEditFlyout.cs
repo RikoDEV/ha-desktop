@@ -12,9 +12,10 @@ namespace HaDesktop.Tray;
 /// <summary>Popup for renaming a tile and/or picking a custom icon, opened from the tile list in Settings.</summary>
 public static class TileEditFlyout
 {
-    public static void Show(Control anchor, string? currentLabel, string? currentIconKey, string defaultLabel, string defaultIconKey, Func<string?, string?, Task> onSave)
+    public static void Show(Control anchor, string? currentLabel, string? currentIconKey, string defaultLabel, string defaultIconKey, bool isSensor, bool currentIsGauge, Func<string?, string?, bool, Task> onSave)
     {
         var labelBox = new TextBox { Watermark = defaultLabel, Text = currentLabel, Width = 232 };
+        var gaugeCheckBox = new CheckBox { Content = Loc.Instance.Tr("TileEdit.DisplayAsGauge"), IsChecked = currentIsGauge, IsVisible = isSensor };
 
         string? selectedIconKey = currentIconKey;
         Button? selectedButton = null;
@@ -56,14 +57,14 @@ public static class TileEditFlyout
         saveButton.Click += async (_, _) =>
         {
             var label = string.IsNullOrWhiteSpace(labelBox.Text) ? null : labelBox.Text.Trim();
-            await onSave(label, selectedIconKey);
+            await onSave(label, selectedIconKey, gaugeCheckBox.IsChecked ?? false);
             flyout?.Hide();
         };
 
         var resetButton = new Button { Content = Loc.Instance.Tr("TileEdit.ResetToDefault") };
         resetButton.Click += async (_, _) =>
         {
-            await onSave(null, null);
+            await onSave(null, null, false);
             flyout?.Hide();
         };
 
@@ -72,6 +73,7 @@ public static class TileEditFlyout
         content.Children.Add(labelBox);
         content.Children.Add(new TextBlock { Text = Loc.Instance.Tr("TileEdit.Icon"), FontSize = 12, Opacity = 0.7, Margin = new Avalonia.Thickness(0, 4, 0, 0) });
         content.Children.Add(iconRow);
+        content.Children.Add(gaugeCheckBox);
         content.Children.Add(new StackPanel
         {
             Orientation = Orientation.Horizontal,

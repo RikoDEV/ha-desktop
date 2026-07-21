@@ -18,6 +18,10 @@
                 <ComboBoxItem Content="{loc:Tr Picker.Covers}" Tag="cover" />
                 <ComboBoxItem Content="{loc:Tr Picker.Sensors}" Tag="sensor" />
                 <ComboBoxItem Content="{loc:Tr Picker.Cameras}" Tag="camera" />
+                <ComboBoxItem Content="{loc:Tr Picker.Climates}" Tag="climate" />
+                <ComboBoxItem Content="{loc:Tr Picker.Fans}" Tag="fan" />
+                <ComboBoxItem Content="{loc:Tr Picker.Humidifiers}" Tag="humidifier" />
+                <ComboBoxItem Content="{loc:Tr Picker.LawnMowers}" Tag="lawn_mower" />
             </ComboBox>
         </StackPanel>
 

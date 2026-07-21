@@ -24,7 +24,8 @@ public sealed record TileConfig(
     TileSize Size = TileSize.Small,
     int Row = -1,
     int Col = -1,
-    List<string>? GroupEntityIds = null)
+    List<string>? GroupEntityIds = null,
+    bool IsGauge = false)
 {
     public static TileConfig NewGroup(string firstEntityId, string secondEntityId, int row, int col) => new(
         "group:" + Guid.NewGuid().ToString("N"),

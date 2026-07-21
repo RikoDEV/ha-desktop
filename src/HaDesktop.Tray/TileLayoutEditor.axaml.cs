@@ -317,8 +317,9 @@ public partial class TileLayoutEditor : UserControl
         editButton.Click += (_, e) =>
         {
             e.Handled = true;
-            TileEditFlyout.Show(editButton, config.CustomLabel, config.CustomIcon, defaultLabel, defaultIconKey,
-                async (newLabel, newIcon) => await AppSettings.UpdateTileAsync(config.EntityId, newLabel, newIcon));
+            var isSensor = state?.Domain == "sensor";
+            TileEditFlyout.Show(editButton, config.CustomLabel, config.CustomIcon, defaultLabel, defaultIconKey, isSensor, config.IsGauge,
+                async (newLabel, newIcon, isGauge) => await AppSettings.UpdateTileAsync(config.EntityId, newLabel, newIcon, isGauge));
         };
         panel.Children.Add(editButton);
 
