@@ -12,10 +12,64 @@ namespace HaDesktop.Tray;
 /// <summary>Popup for renaming a tile and/or picking a custom icon, opened from the tile list in Settings.</summary>
 public static class TileEditFlyout
 {
-    public static void Show(Control anchor, string? currentLabel, string? currentIconKey, string defaultLabel, string defaultIconKey, bool isSensor, bool currentIsGauge, Func<string?, string?, bool, Task> onSave)
+    // Fixed palette rather than a full color picker (à la LightDetailFlyout's ColorSpectrum) —
+    // this colors the whole card's background, not a light's actual bulb color, so a handful of
+    // tasteful, readable-with-white-or-black-text swatches covers it without the extra weight of
+    // a spectrum wheel for what's a cosmetic-only pick.
+    private static (byte R, byte G, byte B)[] ColorSwatches => new (byte, byte, byte)[]
+    {
+        (244, 67, 54), (255, 152, 0), (255, 214, 0), (76, 175, 80),
+        (0, 188, 212), (41, 121, 255), (156, 39, 176), (120, 144, 156),
+    };
+
+    public static void Show(Control anchor, string? currentLabel, string? currentIconKey, string defaultLabel, string defaultIconKey, bool isSensor, bool currentIsGauge, string? currentColor, Func<string?, string?, bool, string?, Task> onSave)
     {
         var labelBox = new TextBox { Watermark = defaultLabel, Text = currentLabel, Width = 232 };
         var gaugeCheckBox = new CheckBox { Content = Loc.Instance.Tr("TileEdit.DisplayAsGauge"), IsChecked = currentIsGauge, IsVisible = isSensor };
+
+        string? selectedColor = currentColor;
+        Button? selectedColorButton = null;
+        var colorRow = new WrapPanel { Margin = new Avalonia.Thickness(0, 4, 0, 4), MaxWidth = 232 };
+        foreach (var (r, g, b) in ColorSwatches)
+        {
+            var hex = $"#{r:X2}{g:X2}{b:X2}";
+            var swatch = new Button
+            {
+                Width = 28,
+                Height = 28,
+                Margin = new Avalonia.Thickness(2),
+                CornerRadius = new Avalonia.CornerRadius(14),
+                Background = new SolidColorBrush(Color.FromRgb(r, g, b)),
+                BorderThickness = new Avalonia.Thickness(hex == selectedColor ? 3 : 1),
+                BorderBrush = hex == selectedColor ? Brushes.White : new SolidColorBrush(Color.FromArgb(60, 0, 0, 0)),
+            };
+            if (hex == selectedColor) selectedColorButton = swatch;
+
+            swatch.Click += (_, _) =>
+            {
+                if (selectedColorButton == swatch)
+                {
+                    // Clicking the already-selected swatch deselects it — back to the tile's default color.
+                    swatch.BorderThickness = new Avalonia.Thickness(1);
+                    swatch.BorderBrush = new SolidColorBrush(Color.FromArgb(60, 0, 0, 0));
+                    selectedColorButton = null;
+                    selectedColor = null;
+                    return;
+                }
+
+                if (selectedColorButton is not null)
+                {
+                    selectedColorButton.BorderThickness = new Avalonia.Thickness(1);
+                    selectedColorButton.BorderBrush = new SolidColorBrush(Color.FromArgb(60, 0, 0, 0));
+                }
+                swatch.BorderThickness = new Avalonia.Thickness(3);
+                swatch.BorderBrush = Brushes.White;
+                selectedColorButton = swatch;
+                selectedColor = hex;
+            };
+
+            colorRow.Children.Add(swatch);
+        }
 
         string? selectedIconKey = currentIconKey;
         Button? selectedButton = null;
@@ -57,14 +111,14 @@ public static class TileEditFlyout
         saveButton.Click += async (_, _) =>
         {
             var label = string.IsNullOrWhiteSpace(labelBox.Text) ? null : labelBox.Text.Trim();
-            await onSave(label, selectedIconKey, gaugeCheckBox.IsChecked ?? false);
+            await onSave(label, selectedIconKey, gaugeCheckBox.IsChecked ?? false, selectedColor);
             flyout?.Hide();
         };
 
         var resetButton = new Button { Content = Loc.Instance.Tr("TileEdit.ResetToDefault") };
         resetButton.Click += async (_, _) =>
         {
-            await onSave(null, null, false);
+            await onSave(null, null, false, null);
             flyout?.Hide();
         };
 
@@ -73,6 +127,8 @@ public static class TileEditFlyout
         content.Children.Add(labelBox);
         content.Children.Add(new TextBlock { Text = Loc.Instance.Tr("TileEdit.Icon"), FontSize = 12, Opacity = 0.7, Margin = new Avalonia.Thickness(0, 4, 0, 0) });
         content.Children.Add(iconRow);
+        content.Children.Add(new TextBlock { Text = Loc.Instance.Tr("TileEdit.Color"), FontSize = 12, Opacity = 0.7, Margin = new Avalonia.Thickness(0, 4, 0, 0) });
+        content.Children.Add(colorRow);
         content.Children.Add(gaugeCheckBox);
         content.Children.Add(new StackPanel
         {

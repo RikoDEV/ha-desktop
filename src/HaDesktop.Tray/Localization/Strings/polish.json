@@ -1,6 +1,5 @@
 {
   "Tray.Settings": "Ustawienia",
-  "Tray.SignOut": "Wyloguj",
   "Tray.Quit": "Zamknij",
   "Tray.Tooltip": "HA Desktop",
 
@@ -82,6 +81,7 @@
 
   "TileEdit.CustomName": "Własna nazwa",
   "TileEdit.Icon": "Ikona",
+  "TileEdit.Color": "Kolor",
   "TileEdit.Save": "Zapisz",
   "TileEdit.ResetToDefault": "Przywróć domyślne",
   "TileEdit.DisplayAsGauge": "Wyświetl jako wskaźnik",
@@ -162,7 +162,7 @@
   "Tiles.MediaBackgroundTitle": "Rozmyte tło okładki albumu",
   "Tiles.MediaBackgroundDescription": "Używa okładki aktualnego utworu jako rozmytego tła karty.",
   "Tiles.NoTilesChosen": "Nie wybrano jeszcze żadnych kafelków.",
-  "Tiles.ToggleSizeTooltip": "Przełącz rozmiar kafelka (Mały/Szeroki)",
+  "Tiles.ResizeTooltip": "Przeciągnij, aby zmienić rozmiar (szerokość i wysokość)",
   "Tiles.RenameTooltip": "Zmień nazwę lub ikonę",
 
   "TileEditor.Instructions": "Przeciągnij kafelek, aby zmienić jego kolejność. Upuść jeden mały kafelek dokładnie na drugi, aby ułożyć do 4 w jednym miejscu — przeciągnij kafelek poza grupę, aby ponownie go wydzielić.",

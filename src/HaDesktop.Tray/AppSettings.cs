@@ -30,6 +30,7 @@ public static class AppSettings
     public static AppearancePreferences Appearance { get; private set; } = AppearancePreferences.Default;
     public static WeatherPreferences WeatherPrefs { get; private set; } = WeatherPreferences.Default;
     public static MediaPlayerPreferences MediaPlayerPrefs { get; private set; } = MediaPlayerPreferences.Default;
+    public static FlyoutWindowPreferences FlyoutWindowPrefs { get; private set; } = FlyoutWindowPreferences.Default;
     public static MobileAppRegistration? Registration { get; private set; }
     public static bool NotificationsEnabled { get; private set; } = true;
     public static AppLanguage Language => Loc.Instance.Current;
@@ -39,6 +40,15 @@ public static class AppSettings
 
     /// <summary>Raised whenever a new client becomes connected (or reconnected after a token refresh) or the tile selection/customization changes.</summary>
     public static event Action? ConnectionChanged;
+
+    /// <summary>
+    /// Raised once <see cref="LoadLocalPreferencesAsync"/> finishes. FlyoutWindow is constructed
+    /// (and its own constructor already run) before that load kicks off — see App.axaml.cs — so it
+    /// can't just read <see cref="FlyoutWindowPrefs"/> at construction time; it applies the saved
+    /// size from this event instead, the same async-then-notify pattern <see cref="ConnectionChanged"/>
+    /// already uses for tile selection.
+    /// </summary>
+    public static event Action? LocalPreferencesLoaded;
 
     /// <summary>Raised whenever a notification is received (history updated).</summary>
     public static event Action? NotificationHistoryChanged;
@@ -59,11 +69,21 @@ public static class AppSettings
         Appearance = await AppearancePreferencesStore.LoadAsync();
         WeatherPrefs = await WeatherPreferencesStore.LoadAsync();
         MediaPlayerPrefs = await MediaPlayerPreferencesStore.LoadAsync();
+        FlyoutWindowPrefs = await FlyoutWindowPreferencesStore.LoadAsync();
         Registration = await MobileAppRegistrationStore.LoadAsync();
         NotificationsEnabled = await NotificationPreferencesStore.LoadAsync();
 
         var languagePrefs = await LanguagePreferencesStore.LoadAsync();
         Loc.Instance.SetLanguage(languagePrefs.Language);
+
+        LocalPreferencesLoaded?.Invoke();
+    }
+
+    /// <summary>Debounced by the caller (FlyoutWindow) while the user is actively dragging a resize handle, so this isn't hit on every intermediate pixel.</summary>
+    public static async Task SetFlyoutWindowSizeAsync(double width, double height)
+    {
+        FlyoutWindowPrefs = new FlyoutWindowPreferences(width, height);
+        await FlyoutWindowPreferencesStore.SaveAsync(FlyoutWindowPrefs);
     }
 
     public static async Task SetLanguageAsync(AppLanguage language)
@@ -102,10 +122,10 @@ public static class AppSettings
         ConnectionChanged?.Invoke();
     }
 
-    public static async Task UpdateTileAsync(string entityId, string? customLabel, string? customIcon, bool isGauge = false)
+    public static async Task UpdateTileAsync(string entityId, string? customLabel, string? customIcon, bool isGauge = false, string? customColor = null)
     {
         var updated = SelectedTiles
-            .Select(t => t.EntityId == entityId ? t with { CustomLabel = customLabel, CustomIcon = customIcon, IsGauge = isGauge } : t)
+            .Select(t => t.EntityId == entityId ? t with { CustomLabel = customLabel, CustomIcon = customIcon, IsGauge = isGauge, CustomColor = customColor } : t)
             .ToList();
         await SetSelectedTilesAsync(updated);
     }

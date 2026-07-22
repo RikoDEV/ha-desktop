@@ -4,7 +4,8 @@
         x:Class="HaDesktop.Tray.FlyoutWindow"
         Title="HA Desktop"
         Width="320" Height="470"
-        CanResize="False"
+        MinWidth="260" MinHeight="360"
+        CanResize="True"
         SystemDecorations="None"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="-1"
@@ -15,62 +16,105 @@
         Background="Transparent">
 
     <!--
-        ExperimentalAcrylicBorder renders an actual frosted-glass blur+noise
-        material. Plain window-level Mica/AcrylicBlur alone can look like a
-        flat solid tint over a plain-colored desktop background — this gives
-        a visibly translucent panel regardless of what's behind it.
-    -->
-    <ExperimentalAcrylicBorder CornerRadius="8">
-        <ExperimentalAcrylicBorder.Material>
-            <ExperimentalAcrylicMaterial
-                BackgroundSource="Digger"
-                TintColor="{DynamicResource SolidBackgroundFillColorBase}"
-                TintOpacity="0.5"
-                MaterialOpacity="0.55" />
-        </ExperimentalAcrylicBorder.Material>
+        SystemDecorations="None" drops the OS's own resize border along with its chrome — Avalonia
+        doesn't grow one back on its own, so CanResize="True" alone gets a resizable window with no
+        way to grab an edge (no cursor feedback, no hit-testing there). The Panel below layers thin
+        transparent strips (edges) and squares (corners, on top so they win the hit-test in the
+        shared corner area) over the whole window; each one just shows the matching resize cursor
+        and calls BeginResizeDrag on press — see FlyoutWindow.axaml.cs's AttachResizeHandlers.
 
-        <Border CornerRadius="8"
-                BorderThickness="1"
-                BorderBrush="{DynamicResource SurfaceStrokeColorDefaultBrush}"
-                Padding="12">
-            <!--
-                Grid with a star-sized last row, not a StackPanel — the window is a fixed size
-                (CanResize="False"), so a hardcoded ScrollViewer height would overflow past the
-                window's bottom edge (and get silently clipped, taking scrollable tiles with it)
-                whenever the weather/media widgets above it are also showing and eating into the
-                available space. The star row always gets exactly whatever room is actually left.
-            -->
-            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8">
-                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="4,0,0,4">
-                    <TextBlock Grid.Column="0" Text="{loc:Tr Flyout.QuickSettings}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Name="NotificationsButton" Click="OnNotificationsButtonClicked"
-                            Padding="4" Background="Transparent" BorderThickness="0"
-                            ToolTip.Tip="{loc:Tr Flyout.NotificationsTooltip}">
-                        <PathIcon Name="NotificationsIcon" Width="16" Height="16" />
-                    </Button>
-                    <Button Grid.Column="2" Name="SettingsButton" Click="OnOpenSettingsClicked"
-                            Padding="4" Background="Transparent" BorderThickness="0"
-                            ToolTip.Tip="{loc:Tr Flyout.SettingsTooltip}">
-                        <PathIcon Name="SettingsIcon" Width="16" Height="16" />
-                    </Button>
-                </Grid>
-                <ContentControl Grid.Row="1" Name="WeatherHost" IsVisible="False" />
-                <ContentControl Grid.Row="2" Name="MediaPlayerHost" IsVisible="False" />
-                <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        All 8 exist here, but only the 3 next to the corner PositionNearTray anchors this window to
+        (opposite the tray icon/menu bar item) are actually enabled at a time — the other 5 are kept
+        IsHitTestVisible="False" (see ApplyAnchorCorner). Dragging an edge/corner touching the
+        anchored one would move THAT corner instead of the far one, visibly walking the whole
+        window away from the tray icon a drag at a time — the anchor can be any of the 4 corners
+        depending on which edge of the screen the taskbar/dock/menu bar occupies (bottom-right on a
+        default Windows/most Linux setup, top-right on macOS or a top panel, bottom-left/top-left
+        with the taskbar moved to the left edge), so all 8 are here for whichever one ends up active.
+    -->
+    <Panel>
+        <!--
+            ExperimentalAcrylicBorder renders an actual frosted-glass blur+noise
+            material. Plain window-level Mica/AcrylicBlur alone can look like a
+            flat solid tint over a plain-colored desktop background — this gives
+            a visibly translucent panel regardless of what's behind it.
+        -->
+        <ExperimentalAcrylicBorder CornerRadius="8">
+            <ExperimentalAcrylicBorder.Material>
+                <ExperimentalAcrylicMaterial
+                    BackgroundSource="Digger"
+                    TintColor="{DynamicResource SolidBackgroundFillColorBase}"
+                    TintOpacity="0.5"
+                    MaterialOpacity="0.55" />
+            </ExperimentalAcrylicBorder.Material>
+
+            <Border CornerRadius="8"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource SurfaceStrokeColorDefaultBrush}"
+                    Padding="12">
+                <!--
+                    Grid with a star-sized last row — the window is resizable, so a hardcoded
+                    ScrollViewer height would overflow past the window's bottom edge (and get
+                    silently clipped, taking scrollable tiles with it) whenever the weather/media
+                    widgets above it are also showing and eating into the available space. The star
+                    row always gets exactly whatever room is actually left.
+                -->
+                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="4,0,0,4">
+                        <TextBlock Grid.Column="0" Text="{loc:Tr Flyout.QuickSettings}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Name="NotificationsButton" Click="OnNotificationsButtonClicked"
+                                Padding="4" Background="Transparent" BorderThickness="0"
+                                ToolTip.Tip="{loc:Tr Flyout.NotificationsTooltip}">
+                            <PathIcon Name="NotificationsIcon" Width="16" Height="16" />
+                        </Button>
+                        <Button Grid.Column="2" Name="SettingsButton" Click="OnOpenSettingsClicked"
+                                Padding="4" Background="Transparent" BorderThickness="0"
+                                ToolTip.Tip="{loc:Tr Flyout.SettingsTooltip}">
+                            <PathIcon Name="SettingsIcon" Width="16" Height="16" />
+                        </Button>
+                    </Grid>
                     <!--
-                        A plain Grid, not a WrapPanel — tiles now carry an explicit stored
-                        (Row, Col) from the layout editor (drag-and-drop position, Wide/Group
-                        spans), so placement has to be addressable by cell rather than flowing
-                        implicitly. Columns are fixed at 3 (matching TileLayoutCompactor.ColumnCount
-                        and each tile's 88px width + 4px margin on both sides = 96px/column);
-                        RowDefinitions are rebuilt in code each refresh since the row count is dynamic.
+                        Row/column placement (and the ColumnDefinitions/RowDefinitions themselves)
+                        is rebuilt in code by FlyoutWindow.axaml.cs's LayoutWidgetsRow: two star
+                        columns side by side once the window is wide enough for both at a
+                        reasonable card width, otherwise two Auto rows stacked full-width — same
+                        "rebuild the grid definitions on every layout pass" approach TileGrid uses,
+                        rather than trusting a WrapPanel's own measure-based wrap decision to agree
+                        with the width this app already computed the layout from.
                     -->
-                    <Panel>
-                        <Grid Name="TileGrid" ColumnDefinitions="96,96,96" />
-                        <ContentControl Name="EmptyStateHost" IsVisible="False" />
-                    </Panel>
-                </ScrollViewer>
-            </Grid>
-        </Border>
-    </ExperimentalAcrylicBorder>
+                    <Grid Grid.Row="1" Name="WidgetsGrid" ColumnSpacing="8" RowSpacing="8">
+                        <ContentControl Name="WeatherHost" IsVisible="False" />
+                        <ContentControl Name="MediaPlayerHost" IsVisible="False" />
+                    </Grid>
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <!--
+                            A plain Grid, not a WrapPanel — tiles now carry an explicit stored
+                            (Row, Col) from the layout editor (drag-and-drop position, Wide/Group
+                            spans), so placement has to be addressable by cell rather than flowing
+                            implicitly. Columns match however many currently fit the window's live
+                            width (TileGrid.ColumnDefinitions is rebuilt in code on every resize —
+                            see FlyoutWindow.axaml.cs); RowDefinitions are rebuilt each refresh too,
+                            since the row count is dynamic.
+                        -->
+                        <Panel>
+                            <Grid Name="TileGrid" ColumnDefinitions="96,96,96" />
+                            <ContentControl Name="EmptyStateHost" IsVisible="False" />
+                        </Panel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </ExperimentalAcrylicBorder>
+
+        <!-- Edges -->
+        <Border Name="ResizeWest" Width="6" HorizontalAlignment="Left" Background="Transparent" Cursor="SizeWestEast" />
+        <Border Name="ResizeEast" Width="6" HorizontalAlignment="Right" Background="Transparent" Cursor="SizeWestEast" />
+        <Border Name="ResizeNorth" Height="6" VerticalAlignment="Top" Background="Transparent" Cursor="SizeNorthSouth" />
+        <Border Name="ResizeSouth" Height="6" VerticalAlignment="Bottom" Background="Transparent" Cursor="SizeNorthSouth" />
+
+        <!-- Corners, layered after the edges so they win the hit-test over the shared corner area -->
+        <Border Name="ResizeNorthWest" Width="10" Height="10" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" Cursor="TopLeftCorner" />
+        <Border Name="ResizeNorthEast" Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" Cursor="TopRightCorner" />
+        <Border Name="ResizeSouthWest" Width="10" Height="10" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomLeftCorner" />
+        <Border Name="ResizeSouthEast" Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomRightCorner" />
+    </Panel>
 </Window>

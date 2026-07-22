@@ -9,6 +9,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
@@ -24,14 +25,6 @@ namespace HaDesktop.Tray;
 /// </summary>
 public partial class FlyoutWindow : Window
 {
-    // MDI "cog" (Material Design Icons, Apache-2.0) — vector, no font dependency.
-    private const string GearIconPath =
-        "M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.72,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.72,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z";
-
-    // MDI "bell" (Material Design Icons, Apache-2.0) — vector, no font dependency.
-    private const string BellIconPath =
-        "M21,19V20H3V19L5,17V11C5,7.9 7.03,5.17 10,4.29C10,4.19 10,4.1 10,4A2,2 0 0,1 12,2A2,2 0 0,1 14,4C14,4.1 14,4.19 14,4.29C16.97,5.17 19,7.9 19,11V17L21,19M14,21A2,2 0 0,1 12,23A2,2 0 0,1 10,21H14Z";
-
     private readonly Dictionary<string, QuickToggleTile> _toggleTilesByEntityId = new();
     private readonly Dictionary<string, CoverTile> _coverTilesByEntityId = new();
     private readonly Dictionary<string, SensorTile> _sensorTilesByEntityId = new();
@@ -52,17 +45,46 @@ public partial class FlyoutWindow : Window
     // needing a full GetStatesAsync round-trip just to notice playback started.
     private readonly Dictionary<string, HaEntityState> _lastKnownStates = new();
 
+    // Matches the 88px tile width + 4px margin on both sides used by every tile's own SetSize.
+    private const double CellWidth = 96;
+    // A Wide/Group tile's 2-column span needs at least this many columns to render without
+    // TileLayoutCompactor.Compact clamping it down to a degraded 1-column shape.
+    private const int MinLiveColumns = 2;
+    // The outer Border's Padding, the one thing between the window's client width and the actual
+    // content area — an estimate, not measured, since ClientSize is the one number available before
+    // the next layout pass actually happens.
+    private const double HorizontalChrome = 24;
+
+    // Weather/media widgets sit side by side (in columns, via a WrapPanel) once there's room for
+    // two this wide with WidgetSpacing between them; otherwise each takes the full row, stacked,
+    // same as before this app supported resizing at all. 220 is MediaPlayerWidget's practical
+    // floor: a 40px album-art thumbnail + 4 icon buttons (~28px each) already eats ~150px before
+    // the title/artist text gets any room at all.
+    private const double MinWidgetCardWidth = 220;
+    private const double WidgetSpacing = 8;
+
+    // However many columns currently fit the window's width — recomputed on resize (see OnResized)
+    // and used to re-flow _lastConfigs into more or fewer columns without touching the persisted
+    // (fixed 3-column) layout the Settings tile editor works with.
+    private int _liveColumnCount;
+    private List<TileConfig> _lastConfigs = new();
+    private DispatcherTimer? _sizeSaveDebounce;
+
     /// <summary>Raised when the user asks to open Settings from within the flyout (e.g. the "not connected" state or the header button).</summary>
     public event Action? OpenSettingsRequested;
 
     public FlyoutWindow()
     {
         InitializeComponent();
-        this.FindControl<PathIcon>("SettingsIcon")!.Data = Geometry.Parse(GearIconPath);
-        this.FindControl<PathIcon>("NotificationsIcon")!.Data = Geometry.Parse(BellIconPath);
+        this.FindControl<PathIcon>("SettingsIcon")!.Data = Geometry.Parse(TileIcons.PathFor("cog"));
+        this.FindControl<PathIcon>("NotificationsIcon")!.Data = Geometry.Parse(TileIcons.PathFor("bell"));
+        _liveColumnCount = ComputeColumnCount(Width);
         Deactivated += (_, _) => Hide();
         AppSettings.ConnectionChanged += OnConnectionChanged;
+        AppSettings.LocalPreferencesLoaded += OnLocalPreferencesLoaded;
         Loc.Instance.LanguageChanged += OnConnectionChanged;
+        Resized += OnResized;
+        AttachResizeHandlers();
         _ = RefreshTilesAsync();
     }
 
@@ -71,9 +93,177 @@ public partial class FlyoutWindow : Window
         AvaloniaXamlLoader.Load(this);
     }
 
+    /// <summary>Which of the window's 4 corners is anchored next to the tray icon/menu bar item — see <see cref="DetermineAnchorCorner"/>.</summary>
+    private enum AnchorCorner { BottomRight, BottomLeft, TopRight, TopLeft }
+
+    /// <summary>Every resize-handle name, keyed by the corner whose 2 edges + 1 diagonal corner should stay enabled — the other 5 handles get disabled so dragging them can't pull the anchored corner away from the tray icon. See ApplyAnchorCorner.</summary>
+    private static readonly Dictionary<AnchorCorner, string[]> EnabledHandlesByAnchor = new()
+    {
+        [AnchorCorner.BottomRight] = new[] { "ResizeWest", "ResizeNorth", "ResizeNorthWest" },
+        [AnchorCorner.BottomLeft] = new[] { "ResizeEast", "ResizeNorth", "ResizeNorthEast" },
+        [AnchorCorner.TopRight] = new[] { "ResizeWest", "ResizeSouth", "ResizeSouthWest" },
+        [AnchorCorner.TopLeft] = new[] { "ResizeEast", "ResizeSouth", "ResizeSouthEast" },
+    };
+
+    /// <summary>
+    /// SystemDecorations="None" drops the OS's own resizable border along with its chrome, and
+    /// Avalonia doesn't grow one back just because CanResize="True" — without this, the window can
+    /// still be resized programmatically (e.g. restoring a saved size) but the user has no edge to
+    /// grab, and no cursor ever changes to suggest one exists. The XAML overlays a thin transparent
+    /// strip/square per edge/corner; this wires all 8 to their matching WindowEdge once — which of
+    /// them are actually usable at any given moment is toggled separately by ApplyAnchorCorner.
+    /// </summary>
+    private void AttachResizeHandlers()
+    {
+        AttachResizeHandle("ResizeWest", WindowEdge.West);
+        AttachResizeHandle("ResizeEast", WindowEdge.East);
+        AttachResizeHandle("ResizeNorth", WindowEdge.North);
+        AttachResizeHandle("ResizeSouth", WindowEdge.South);
+        AttachResizeHandle("ResizeNorthWest", WindowEdge.NorthWest);
+        AttachResizeHandle("ResizeNorthEast", WindowEdge.NorthEast);
+        AttachResizeHandle("ResizeSouthWest", WindowEdge.SouthWest);
+        AttachResizeHandle("ResizeSouthEast", WindowEdge.SouthEast);
+    }
+
+    private void AttachResizeHandle(string name, WindowEdge edge)
+    {
+        var handle = this.FindControl<Border>(name)!;
+        handle.PointerPressed += (_, e) =>
+        {
+            if (handle.IsHitTestVisible && e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
+                BeginResizeDrag(edge, e);
+        };
+    }
+
+    /// <summary>Enables only the 3 handles next to <paramref name="corner"/>'s opposite corner (see EnabledHandlesByAnchor), disabling the rest — IsHitTestVisible="False" also stops them from showing their resize cursor.</summary>
+    private void ApplyAnchorCorner(AnchorCorner corner)
+    {
+        var enabled = EnabledHandlesByAnchor[corner];
+        foreach (var names in EnabledHandlesByAnchor.Values)
+            foreach (var name in names)
+                this.FindControl<Border>(name)!.IsHitTestVisible = enabled.Contains(name);
+    }
+
+    /// <summary>
+    /// Infers which corner of the screen the tray icon/menu bar item sits near, from how the
+    /// screen's WorkingArea is inset from its full Bounds — the taskbar/panel/menu bar occupies
+    /// that inset. macOS is special-cased rather than measured: its Dock (bottom by default, but
+    /// resizable/repositionable) can easily be taller than the menu bar, so comparing inset sizes
+    /// would misdetect it — the menu bar (and every status item) is always along the top edge
+    /// regardless of the Dock, so top-right is unconditionally correct there.
+    /// </summary>
+    private static AnchorCorner DetermineAnchorCorner(Screen screen)
+    {
+        if (OperatingSystem.IsMacOS())
+            return AnchorCorner.TopRight;
+
+        var work = screen.WorkingArea;
+        var bounds = screen.Bounds;
+
+        var topInset = work.Y - bounds.Y;
+        var bottomInset = bounds.Bottom - work.Bottom;
+        var leftInset = work.X - bounds.X;
+        var rightInset = bounds.Right - work.Right;
+        var maxInset = Math.Max(Math.Max(topInset, bottomInset), Math.Max(leftInset, rightInset));
+
+        if (maxInset <= 0) return AnchorCorner.BottomRight; // no taskbar/panel detected (e.g. auto-hide) — sane default
+        if (topInset == maxInset) return AnchorCorner.TopRight; // top panel (GNOME, etc.) — tray sits at its right end
+        if (leftInset == maxInset) return AnchorCorner.BottomLeft; // vertical taskbar on the left — tray at its bottom end
+        return AnchorCorner.BottomRight; // bottom taskbar, or a vertical one on the right — tray at its bottom end either way
+    }
+
     private void OnConnectionChanged()
     {
         Dispatcher.UIThread.Post(() => _ = RefreshTilesAsync());
+    }
+
+    /// <summary>
+    /// FlyoutWindow is constructed (and this constructor already run) before
+    /// AppSettings.LoadLocalPreferencesAsync even starts — see App.axaml.cs — so the saved size
+    /// can't just be read at construction time; it's applied here once loading actually finishes.
+    /// </summary>
+    private void OnLocalPreferencesLoaded()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var prefs = AppSettings.FlyoutWindowPrefs;
+            Width = prefs.Width;
+            Height = prefs.Height;
+
+            LayoutWidgetsRow(Width);
+
+            var newColumnCount = ComputeColumnCount(Width);
+            if (newColumnCount == _liveColumnCount) return;
+            _liveColumnCount = newColumnCount;
+            if (_lastConfigs.Count > 0 && AppSettings.Client is { } client)
+                PopulateTileGrid(_lastConfigs, _lastKnownStates, client);
+        });
+    }
+
+    private void OnResized(object? sender, WindowResizedEventArgs e)
+    {
+        LayoutWidgetsRow(e.ClientSize.Width);
+
+        var newColumnCount = ComputeColumnCount(e.ClientSize.Width);
+        if (newColumnCount != _liveColumnCount && _lastConfigs.Count > 0 && AppSettings.Client is { } client)
+        {
+            _liveColumnCount = newColumnCount;
+            PopulateTileGrid(_lastConfigs, _lastKnownStates, client);
+        }
+
+        // Debounced — this event fires continuously while the user drags a resize handle.
+        _sizeSaveDebounce?.Stop();
+        _sizeSaveDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _sizeSaveDebounce.Tick += async (_, _) =>
+        {
+            _sizeSaveDebounce!.Stop();
+            await AppSettings.SetFlyoutWindowSizeAsync(Width, Height);
+        };
+        _sizeSaveDebounce.Start();
+    }
+
+    private static int ComputeColumnCount(double clientWidth) =>
+        Math.Max(MinLiveColumns, (int)Math.Floor((clientWidth - HorizontalChrome) / CellWidth));
+
+    /// <summary>
+    /// Places the weather/media widgets side by side (two star columns, splitting the available
+    /// width evenly) once there's room for both at a reasonable card width, or stacked (two Auto
+    /// rows, each full width) otherwise — called whenever the window is resized or either widget's
+    /// visibility changes. Rebuilds WidgetsGrid's own row/column definitions each time rather than
+    /// computing a pixel width for each host and trusting a WrapPanel to independently arrive at
+    /// the same side-by-side-or-not decision from that.
+    /// </summary>
+    private void LayoutWidgetsRow(double clientWidth)
+    {
+        var weatherHost = this.FindControl<ContentControl>("WeatherHost")!;
+        var mediaHost = this.FindControl<ContentControl>("MediaPlayerHost")!;
+        var widgetsGrid = this.FindControl<Grid>("WidgetsGrid")!;
+
+        var available = Math.Max(0, clientWidth - HorizontalChrome);
+        var bothVisible = weatherHost.IsVisible && mediaHost.IsVisible;
+        var sideBySide = bothVisible && (available - WidgetSpacing) / 2 >= MinWidgetCardWidth;
+
+        widgetsGrid.ColumnDefinitions.Clear();
+        widgetsGrid.RowDefinitions.Clear();
+
+        if (sideBySide)
+        {
+            widgetsGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            widgetsGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            Grid.SetColumn(weatherHost, 0);
+            Grid.SetRow(weatherHost, 0);
+            Grid.SetColumn(mediaHost, 1);
+            Grid.SetRow(mediaHost, 0);
+        }
+        else
+        {
+            widgetsGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            widgetsGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            Grid.SetColumn(weatherHost, 0);
+            Grid.SetRow(weatherHost, 0);
+            Grid.SetColumn(mediaHost, 0);
+            Grid.SetRow(mediaHost, 1);
+        }
     }
 
     private int _tilesRefreshToken;
@@ -118,6 +308,7 @@ public partial class FlyoutWindow : Window
             if (myToken != _tilesRefreshToken) return;
             ClearTileState();
             _lastKnownStates.Clear();
+            _lastConfigs = new();
             HideWeatherWidget();
             HideMediaPlayerWidget();
             ShowEmptyState("🔌", Loc.Instance.Tr("Flyout.NotConnectedTitle"), Loc.Instance.Tr("Flyout.NotConnectedSubtitle"), showSettingsButton: true);
@@ -137,6 +328,7 @@ public partial class FlyoutWindow : Window
             if (myToken != _tilesRefreshToken) return;
             ClearTileState();
             _lastKnownStates.Clear();
+            _lastConfigs = new();
             HideWeatherWidget();
             HideMediaPlayerWidget();
             ShowEmptyState("⚠", Loc.Instance.Tr("Flyout.ConnectionErrorTitle"), Loc.Instance.Tr("Flyout.ConnectionErrorSubtitle"), showSettingsButton: true);
@@ -152,6 +344,7 @@ public partial class FlyoutWindow : Window
         foreach (var (id, state) in byId) _lastKnownStates[id] = state;
         UpdateWeatherWidget(byId, client);
         UpdateMediaPlayerWidget(byId, client);
+        LayoutWidgetsRow(Width);
 
         List<TileConfig> configs = AppSettings.SelectedTiles.Count > 0
             // User has picked specific tiles in Settings — show exactly those, at their chosen positions/sizes.
@@ -160,11 +353,34 @@ public partial class FlyoutWindow : Window
             // Not yet positioned (fresh, ephemeral list), so compacted the same way a persisted list would be.
             : TileLayoutCompactor.Compact(states.Where(s => s.Domain is "light" or "switch" or "cover").Take(8).Select(s => new TileConfig(s.EntityId)).ToList());
 
+        PopulateTileGrid(configs, byId, client);
+    }
+
+    /// <summary>
+    /// Builds every tile in <paramref name="configs"/> into TileGrid. Called both after a full
+    /// RefreshTilesAsync (fresh states from HA) and from a resize that changed how many columns
+    /// currently fit (reusing the last known configs/states — no network round-trip needed just to
+    /// re-flow the same tiles into a different column count).
+    /// </summary>
+    private void PopulateTileGrid(List<TileConfig> configs, Dictionary<string, HaEntityState> byId, HaClient client)
+    {
+        _lastConfigs = configs;
+        ClearTileState();
+
         var grid = this.FindControl<Grid>("TileGrid")!;
+        grid.ColumnDefinitions.Clear();
+        for (var i = 0; i < _liveColumnCount; i++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition(CellWidth, GridUnitType.Pixel));
+
+        // Re-flows configs' list order into however many columns currently fit — never trusts the
+        // stored Row/Col, which are the Settings tile editor's fixed 3-column layout, not this
+        // resizable window's live one.
+        var layoutConfigs = TileLayoutCompactor.Defragment(configs, _liveColumnCount);
+
         var maxRow = 0;
         var builtAny = false;
 
-        foreach (var config in configs)
+        foreach (var config in layoutConfigs)
         {
             var tile = config.Size == TileSize.Group
                 ? BuildGroupTile(config, byId, client)
@@ -262,6 +478,7 @@ public partial class FlyoutWindow : Window
             HaEntityDisplay.LightColorFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
         tile.SetSize(config.Size);
+        tile.SetCustomColor(ParseColor(config.CustomColor));
         tile.Toggled += async (_, _) =>
         {
             try { await client.ToggleAsync(state.EntityId); }
@@ -283,6 +500,7 @@ public partial class FlyoutWindow : Window
         tile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
         tile.SetSize(config.Size);
+        tile.SetCustomColor(ParseColor(config.CustomColor));
         tile.OpenRequested += async (_, _) => await TryCallAsync(client, "cover", "open_cover", state.EntityId);
         tile.StopRequested += async (_, _) => await TryCallAsync(client, "cover", "stop_cover", state.EntityId);
         tile.CloseRequested += async (_, _) => await TryCallAsync(client, "cover", "close_cover", state.EntityId);
@@ -300,6 +518,7 @@ public partial class FlyoutWindow : Window
             HaEntityDisplay.ValueFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
         tile.SetSize(config.Size);
+        tile.SetCustomColor(ParseColor(config.CustomColor));
 
         _sensorTilesByEntityId[state.EntityId] = tile;
         return tile;
@@ -311,6 +530,7 @@ public partial class FlyoutWindow : Window
         tile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
         tile.SetSize(config.Size);
+        tile.SetCustomColor(ParseColor(config.CustomColor));
 
         _gaugeTilesByEntityId[state.EntityId] = tile;
         return tile;
@@ -322,6 +542,7 @@ public partial class FlyoutWindow : Window
         tile.SetContent(config.CustomLabel ?? HaEntityDisplay.LabelFor(state), client);
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
         tile.SetSize(config.Size);
+        tile.SetCustomColor(ParseColor(config.CustomColor));
 
         _cameraTilesByEntityId[state.EntityId] = tile;
         return tile;
@@ -333,6 +554,7 @@ public partial class FlyoutWindow : Window
         tile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
         tile.SetSize(config.Size);
+        tile.SetCustomColor(ParseColor(config.CustomColor));
         tile.ModeChangeRequested += async (_, mode) =>
             await TryCallAsync(client, "climate", "set_hvac_mode", state.EntityId, new System.Text.Json.Nodes.JsonObject { ["hvac_mode"] = mode });
         tile.DetailRequested += (_, _) => ThermostatDetailFlyout.Show(tile, state.EntityId, state, client);
@@ -347,6 +569,7 @@ public partial class FlyoutWindow : Window
         tile.SetContent(state, config.CustomLabel ?? HaEntityDisplay.LabelFor(state));
         tile.SetCornerRadius(AppSettings.Appearance.TileCornerRadius);
         tile.SetSize(config.Size);
+        tile.SetCustomColor(ParseColor(config.CustomColor));
         tile.StartRequested += async (_, _) => await TryCallAsync(client, "lawn_mower", "start_mowing", state.EntityId);
         tile.PauseRequested += async (_, _) => await TryCallAsync(client, "lawn_mower", "pause", state.EntityId);
         tile.DockRequested += async (_, _) => await TryCallAsync(client, "lawn_mower", "dock", state.EntityId);
@@ -439,6 +662,10 @@ public partial class FlyoutWindow : Window
         catch { /* best effort */ }
     }
 
+    /// <summary>Parses a TileConfig.CustomColor hex string (e.g. "#3498DB"), or null if unset/malformed — a tile just keeps its default color in that case.</summary>
+    private static Color? ParseColor(string? hex) =>
+        hex is not null && Color.TryParse(hex, out var color) ? color : null;
+
     private Control BuildEmptyState(string icon, string title, string subtitle, bool showSettingsButton)
     {
         var panel = new StackPanel
@@ -520,6 +747,7 @@ public partial class FlyoutWindow : Window
                 // playback starting on a different (or previously-idle) entity updates the
                 // card immediately instead of only after the next full tile refresh.
                 UpdateMediaPlayerWidget(_lastKnownStates, client);
+                LayoutWidgetsRow(Width);
             }
 
             _tileConfigsByEntityId.TryGetValue(state.EntityId, out var config);
@@ -579,13 +807,23 @@ public partial class FlyoutWindow : Window
         var scaling = screen.Scaling;
         var pixelWidth = (int)(Width * scaling);
         var pixelHeight = (int)(Height * scaling);
-        const int margin = 12;
+        var marginPx = (int)(12 * scaling);
 
-        // Anchor bottom-right, matching the typical Windows/Linux tray flyout
-        // position. macOS overrides this later to anchor top-right under the
-        // menu-bar item instead.
-        Position = new PixelPoint(
-            workArea.X + workArea.Width - pixelWidth - (int)(margin * scaling),
-            workArea.Y + workArea.Height - pixelHeight - (int)(margin * scaling));
+        // Re-evaluated on every open, not just once at startup — the primary screen (or its
+        // taskbar/panel position) can change between sessions, and ApplyAnchorCorner has to stay
+        // in sync with wherever this actually ends up anchored so the earlier resize-handle fix
+        // still protects the right corner.
+        var corner = DetermineAnchorCorner(screen);
+        ApplyAnchorCorner(corner);
+
+        var x = corner is AnchorCorner.BottomRight or AnchorCorner.TopRight
+            ? workArea.X + workArea.Width - pixelWidth - marginPx
+            : workArea.X + marginPx;
+
+        var y = corner is AnchorCorner.BottomRight or AnchorCorner.BottomLeft
+            ? workArea.Y + workArea.Height - pixelHeight - marginPx
+            : workArea.Y + marginPx;
+
+        Position = new PixelPoint(x, y);
     }
 }

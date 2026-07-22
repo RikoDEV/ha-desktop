@@ -1,6 +1,5 @@
 {
   "Tray.Settings": "Настройки",
-  "Tray.SignOut": "Выйти",
   "Tray.Quit": "Выход",
   "Tray.Tooltip": "HA Desktop",
 
@@ -82,6 +81,7 @@
 
   "TileEdit.CustomName": "Своё название",
   "TileEdit.Icon": "Значок",
+  "TileEdit.Color": "Цвет",
   "TileEdit.Save": "Сохранить",
   "TileEdit.ResetToDefault": "Сбросить по умолчанию",
   "TileEdit.DisplayAsGauge": "Показывать как шкалу",
@@ -162,7 +162,7 @@
   "Tiles.MediaBackgroundTitle": "Размытая обложка альбома в качестве фона",
   "Tiles.MediaBackgroundDescription": "Использует обложку текущего трека как размытый фон карточки.",
   "Tiles.NoTilesChosen": "Плитки пока не выбраны.",
-  "Tiles.ToggleSizeTooltip": "Переключить размер плитки (Маленький/Широкий)",
+  "Tiles.ResizeTooltip": "Перетащите, чтобы изменить размер (ширина и высота)",
   "Tiles.RenameTooltip": "Переименовать или сменить значок",
 
   "TileEditor.Instructions": "Перетащите плитку, чтобы изменить её порядок. Перетащите одну маленькую плитку точно на другую, чтобы объединить до 4 в одном месте — перетащите плитку из группы, чтобы снова отделить её.",

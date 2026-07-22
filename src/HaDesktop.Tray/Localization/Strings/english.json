@@ -1,6 +1,5 @@
 {
   "Tray.Settings": "Settings",
-  "Tray.SignOut": "Sign Out",
   "Tray.Quit": "Quit",
   "Tray.Tooltip": "HA Desktop",
 
@@ -82,6 +81,7 @@
 
   "TileEdit.CustomName": "Custom Name",
   "TileEdit.Icon": "Icon",
+  "TileEdit.Color": "Color",
   "TileEdit.Save": "Save",
   "TileEdit.ResetToDefault": "Reset to Default",
   "TileEdit.DisplayAsGauge": "Display as Gauge",
@@ -162,7 +162,7 @@
   "Tiles.MediaBackgroundTitle": "Blurred Album Art Background",
   "Tiles.MediaBackgroundDescription": "Uses the current track's cover art as a blurred backdrop for the card.",
   "Tiles.NoTilesChosen": "No tiles chosen yet.",
-  "Tiles.ToggleSizeTooltip": "Toggle tile size (Small/Wide)",
+  "Tiles.ResizeTooltip": "Drag to resize (width and height)",
   "Tiles.RenameTooltip": "Rename or change icon",
 
   "TileEditor.Instructions": "Drag a tile to reorder it. Drop one small tile squarely onto another to stack up to 4 into one slot — drag a tile back out of a group to split it off again.",

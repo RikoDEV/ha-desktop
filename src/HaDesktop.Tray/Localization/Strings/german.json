@@ -1,6 +1,5 @@
 {
   "Tray.Settings": "Einstellungen",
-  "Tray.SignOut": "Abmelden",
   "Tray.Quit": "Beenden",
   "Tray.Tooltip": "HA Desktop",
 
@@ -82,6 +81,7 @@
 
   "TileEdit.CustomName": "Eigener Name",
   "TileEdit.Icon": "Symbol",
+  "TileEdit.Color": "Farbe",
   "TileEdit.Save": "Speichern",
   "TileEdit.ResetToDefault": "Auf Standard zurücksetzen",
   "TileEdit.DisplayAsGauge": "Als Messgerät anzeigen",
@@ -162,7 +162,7 @@
   "Tiles.MediaBackgroundTitle": "Unscharfes Album-Cover als Hintergrund",
   "Tiles.MediaBackgroundDescription": "Verwendet das Cover des aktuellen Titels als unscharfen Hintergrund für die Karte.",
   "Tiles.NoTilesChosen": "Noch keine Kacheln ausgewählt.",
-  "Tiles.ToggleSizeTooltip": "Kachelgröße umschalten (Klein/Breit)",
+  "Tiles.ResizeTooltip": "Ziehen zum Ändern der Größe (Breite und Höhe)",
   "Tiles.RenameTooltip": "Umbenennen oder Symbol ändern",
 
   "TileEditor.Instructions": "Ziehe eine Kachel, um sie neu anzuordnen. Lege eine kleine Kachel genau auf eine andere, um bis zu 4 in einem Feld zu stapeln — ziehe eine Kachel aus einer Gruppe heraus, um sie wieder zu trennen.",

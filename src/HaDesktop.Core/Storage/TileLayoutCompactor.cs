@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -13,8 +14,8 @@ public static class TileLayoutCompactor
 {
     public const int ColumnCount = 3;
 
-    public static int ColSpanFor(TileSize size) => size is TileSize.Wide or TileSize.Group ? 2 : 1;
-    public static int RowSpanFor(TileSize size) => size == TileSize.Group ? 2 : 1;
+    public static int ColSpanFor(TileSize size) => size is TileSize.Wide or TileSize.Large or TileSize.Group ? 2 : 1;
+    public static int RowSpanFor(TileSize size) => size is TileSize.Tall or TileSize.Large or TileSize.Group ? 2 : 1;
 
     public static bool Overlaps(int row, int col, int colSpan, int rowSpan, TileConfig other)
     {
@@ -32,11 +33,15 @@ public static class TileLayoutCompactor
     /// ever to move it to a new spot in the underlying list (AppSettings.MoveTileToIndexAsync),
     /// and this then lays the whole grid out fresh from that order — no separate "shift positions"
     /// logic needed, and no risk of a resize/merge leaving a hole or overlap behind.
+    ///
+    /// <paramref name="columnCount"/> defaults to the Settings editor's fixed <see cref="ColumnCount"/>;
+    /// the flyout passes its own live column count (however many currently fit its resizable width)
+    /// to re-flow the same list into more or fewer columns without touching the persisted layout.
     /// </summary>
-    public static List<TileConfig> Defragment(IReadOnlyList<TileConfig> tiles) =>
-        Compact(tiles.Select(t => t with { Row = -1, Col = -1 }).ToList());
+    public static List<TileConfig> Defragment(IReadOnlyList<TileConfig> tiles, int columnCount = ColumnCount) =>
+        Compact(tiles.Select(t => t with { Row = -1, Col = -1 }).ToList(), columnCount);
 
-    public static List<TileConfig> Compact(IReadOnlyList<TileConfig> tiles)
+    public static List<TileConfig> Compact(IReadOnlyList<TileConfig> tiles, int columnCount = ColumnCount)
     {
         var occupied = new HashSet<(int Row, int Col)>();
         foreach (var tile in tiles)
@@ -54,9 +59,13 @@ public static class TileLayoutCompactor
                 continue;
             }
 
-            var colSpan = ColSpanFor(tile.Size);
+            // Clamped rather than trusted as-is: a Wide/Group tile's normal 2-column span would
+            // never find a free cell (and loop forever) in a live layout narrowed to a single
+            // column — callers are expected to keep columnCount >= 2, but this is the difference
+            // between a degraded-but-rendered tile and a hung UI thread if that assumption ever slips.
+            var colSpan = Math.Min(ColSpanFor(tile.Size), Math.Max(1, columnCount));
             var rowSpan = RowSpanFor(tile.Size);
-            var (row, col) = FindFreeCell(occupied, colSpan, rowSpan);
+            var (row, col) = FindFreeCell(occupied, colSpan, rowSpan, columnCount);
             MarkOccupied(occupied, row, col, colSpan, rowSpan);
             result.Add(tile with { Row = row, Col = col });
         }
@@ -64,11 +73,11 @@ public static class TileLayoutCompactor
         return result;
     }
 
-    private static (int Row, int Col) FindFreeCell(HashSet<(int Row, int Col)> occupied, int colSpan, int rowSpan)
+    private static (int Row, int Col) FindFreeCell(HashSet<(int Row, int Col)> occupied, int colSpan, int rowSpan, int columnCount)
     {
         for (var row = 0; ; row++)
         {
-            for (var col = 0; col <= ColumnCount - colSpan; col++)
+            for (var col = 0; col <= columnCount - colSpan; col++)
             {
                 if (Fits(occupied, row, col, colSpan, rowSpan))
                     return (row, col);

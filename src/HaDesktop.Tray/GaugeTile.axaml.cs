@@ -75,5 +75,15 @@ public partial class GaugeTile : UserControl
     public void SetCornerRadius(double radius) =>
         this.FindControl<Border>("RootBorder")!.CornerRadius = new CornerRadius(radius);
 
-    public void SetSize(TileSize size) => Width = size == TileSize.Wide ? 184 : 88;
+    /// <summary>Overrides the tile's background with a user-picked color; a fresh tile instance already shows the theme default otherwise (see FlyoutWindow — tiles are rebuilt from scratch on every refresh), so this only ever needs to act when a color is actually set.</summary>
+    public void SetCustomColor(Color? color)
+    {
+        if (color is { } c) this.FindControl<Border>("RootBorder")!.Background = new SolidColorBrush(c);
+    }
+
+    public void SetSize(TileSize size)
+    {
+        Width = TileDimensions.WidthFor(size);
+        Height = TileDimensions.HeightFor(size);
+    }
 }

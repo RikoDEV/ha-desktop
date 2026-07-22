@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace HaDesktop.Core.Storage;
 
-public enum TileSize { Small, Wide, Group }
+public enum TileSize { Small, Wide, Tall, Large, Group }
 
 /// <summary>
 /// A chosen quick-toggle tile, with optional overrides for the entity's default icon/friendly
@@ -25,7 +25,8 @@ public sealed record TileConfig(
     int Row = -1,
     int Col = -1,
     List<string>? GroupEntityIds = null,
-    bool IsGauge = false)
+    bool IsGauge = false,
+    string? CustomColor = null)
 {
     public static TileConfig NewGroup(string firstEntityId, string secondEntityId, int row, int col) => new(
         "group:" + Guid.NewGuid().ToString("N"),

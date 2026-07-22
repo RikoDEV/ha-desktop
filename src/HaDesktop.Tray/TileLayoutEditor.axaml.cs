@@ -19,8 +19,9 @@ namespace HaDesktop.Tray;
 
 /// <summary>
 /// Visual, drag-and-drop editor for the flyout's tile grid, embedded directly in the Tiles settings
-/// page — reorder by dragging, resize via a per-tile Small/Wide toggle, merge two tiles by dropping
-/// one squarely onto another to create a 2x2 Group tile (up to 4 entities stacked into one slot,
+/// page — reorder by dragging, resize by dragging a tile's corner grip (width and height
+/// independently, snapping to Small/Wide/Tall/Large), merge two tiles by dropping one squarely
+/// onto another to create a 2x2 Group tile (up to 4 entities stacked into one slot,
 /// Windows-Start-Menu-folder-tile style), and drag a tile back out of a Group the same way Start
 /// Menu folder tiles work. A dashed "+" ghost tile always sits at the end of the grid in place of a
 /// separate "Add Tiles" button — clicking it opens the entity picker.
@@ -45,6 +46,17 @@ public partial class TileLayoutEditor : UserControl
     private const double CellWidth = 108;
     private const double CellHeight = 92;
     private const double TileMargin = 4;
+
+    // A Wide/Group tile's 2-column span needs at least this many columns to render without
+    // TileLayoutCompactor.Compact clamping it down to a degraded 1-column shape (same reasoning as
+    // the flyout window's own live column count).
+    private const int MinLiveColumns = 2;
+
+    // However many columns currently fit this control's available width — recomputed on every
+    // SizeChanged (the Settings window is resizable, and this editor spans its whole content
+    // section rather than a fixed 3-column strip) instead of the persisted layout's fixed
+    // TileLayoutCompactor.ColumnCount, so the grid actually uses the width it's given.
+    private int _liveColumnCount = TileLayoutCompactor.ColumnCount;
 
     // A drag has to move at least this far before it "counts" — otherwise a plain click (on the
     // size toggle, edit, or remove buttons layered on top of a card) would register as a zero-
@@ -71,6 +83,16 @@ public partial class TileLayoutEditor : UserControl
     private double _dragStartLeft;
     private double _dragStartTop;
 
+    // Resizing (dragging a tile's own corner grip) is tracked separately from whole-tile reorder
+    // dragging above — the two never overlap (the grip's PointerPressed marks its event Handled so
+    // it doesn't also start a reorder-drag on the same gesture), but need their own state since a
+    // resize doesn't move the card, just grows/shrinks it in place.
+    private Border? _resizingCard;
+    private TileConfig? _resizingConfig;
+    private Point _resizeStartPointerPos;
+    private int _resizeStartColSpan;
+    private int _resizeStartRowSpan;
+
     // A quadrant drag starts life pinned inside its GroupTile card; it only "detaches" into its
     // own floating ghost (and thus counts as pulling it out of the group) once the pointer has
     // moved past the drag threshold — a plain tap on a quadrant does nothing, rather than yanking
@@ -87,6 +109,7 @@ public partial class TileLayoutEditor : UserControl
         InitializeComponent();
         AppSettings.ConnectionChanged += OnConnectionChanged;
         Loc.Instance.LanguageChanged += OnConnectionChanged;
+        SizeChanged += OnSizeChanged;
         DetachedFromVisualTree += (_, _) =>
         {
             AppSettings.ConnectionChanged -= OnConnectionChanged;
@@ -98,6 +121,28 @@ public partial class TileLayoutEditor : UserControl
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     private void OnConnectionChanged() => Dispatcher.UIThread.Post(() => _ = RefreshAsync());
+
+    /// <summary>
+    /// This control's own Bounds already reflect the full Settings page section width (its
+    /// StackPanel root is Stretch-aligned, same as the UserControl itself and the ContentControl
+    /// hosting it) even though the Canvas inside — sized to exactly fit however many columns are
+    /// actually laid out — doesn't visually fill that on its own. Recomputing and re-laying-out
+    /// only when the column count actually changes avoids a full rebuild on every intermediate
+    /// resize pixel.
+    /// </summary>
+    private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged || IsDragActive) return;
+
+        var newColumnCount = ComputeColumnCount(e.NewSize.Width);
+        if (newColumnCount == _liveColumnCount) return;
+
+        _liveColumnCount = newColumnCount;
+        _ = RefreshAsync();
+    }
+
+    private static int ComputeColumnCount(double availableWidth) =>
+        Math.Max(MinLiveColumns, (int)Math.Floor(availableWidth / CellWidth));
 
     /// <summary>
     /// True whenever a drag (whole-tile or a quadrant pulled out of a Group) is in progress. A
@@ -135,18 +180,18 @@ public partial class TileLayoutEditor : UserControl
 
         if (myToken != _refreshToken || IsDragActive) return; // superseded, or a drag started while we were awaiting
 
-        _currentConfigs = TileLayoutCompactor.Compact(AppSettings.SelectedTiles);
+        _currentConfigs = TileLayoutCompactor.Compact(AppSettings.SelectedTiles, _liveColumnCount);
         _mergeHighlightKey = null;
 
         // The "+" add-tile card always renders as one more Small slot right after the real tiles —
         // reusing Compact to find its cell means it never overlaps whatever the real tiles' own
         // Wide/Group spans leave behind.
-        var withAddTile = TileLayoutCompactor.Compact(_currentConfigs.Append(new TileConfig(AddTileKey)).ToList());
+        var withAddTile = TileLayoutCompactor.Compact(_currentConfigs.Append(new TileConfig(AddTileKey)).ToList(), _liveColumnCount);
 
         var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
         var stillPresent = new HashSet<string>();
         var maxRow = 0;
-        var maxCol = TileLayoutCompactor.ColumnCount;
+        var maxCol = _liveColumnCount;
 
         foreach (var config in withAddTile)
         {
@@ -163,7 +208,8 @@ public partial class TileLayoutEditor : UserControl
             // shape changed anyway, not just their position.
             if (_cardsByKey.TryGetValue(config.EntityId, out var existing) && _cardSizeByKey[config.EntityId] == config.Size)
             {
-                existing.Child = BuildCardContent(config);
+                existing.Child = BuildCardContent(config, existing);
+                existing.Background = CardBackgroundFor(config);
                 Canvas.SetLeft(existing, left);
                 Canvas.SetTop(existing, top);
                 // Belt-and-suspenders: a card should never legitimately reach a settle-refresh
@@ -204,10 +250,10 @@ public partial class TileLayoutEditor : UserControl
         canvas.Height = (maxRow + 1) * CellHeight; // one extra row of headroom to drop a new bottom row into
     }
 
-    private Control BuildCardContent(TileConfig config) => config.EntityId switch
+    private Control BuildCardContent(TileConfig config, Border root) => config.EntityId switch
     {
         AddTileKey => BuildAddTileContent(),
-        _ => config.Size == TileSize.Group ? BuildGroupPreview(config) : BuildSinglePreview(config),
+        _ => config.Size == TileSize.Group ? BuildGroupPreview(config) : BuildSinglePreview(config, root),
     };
 
     private Border BuildCard(TileConfig config)
@@ -216,18 +262,21 @@ public partial class TileLayoutEditor : UserControl
         var colSpan = TileLayoutCompactor.ColSpanFor(config.Size);
         var rowSpan = TileLayoutCompactor.RowSpanFor(config.Size);
 
+        // Built without its Child first — BuildCardContent (for a resizable single-entity tile)
+        // wires the resize grip's drag handlers directly against this same root instance, which
+        // doesn't exist yet while it's still being constructed inside an object initializer.
         var root = new Border
         {
             Width = colSpan * CellWidth - 2 * TileMargin,
             Height = rowSpan * CellHeight - 2 * TileMargin,
             CornerRadius = new CornerRadius(6),
-            Background = isAddTile ? AddTileBackgroundBrush : NormalBackgroundBrush,
+            Background = isAddTile ? AddTileBackgroundBrush : CardBackgroundFor(config),
             BorderBrush = isAddTile ? AddTileBorderBrush : NormalBorderBrush,
             BorderThickness = new Thickness(1),
             Cursor = new Cursor(isAddTile ? StandardCursorType.Hand : StandardCursorType.SizeAll),
-            Child = BuildCardContent(config),
             Transitions = BuildCardTransitions(),
         };
+        root.Child = BuildCardContent(config, root);
 
         if (isAddTile)
         {
@@ -270,7 +319,7 @@ public partial class TileLayoutEditor : UserControl
         new ThicknessTransition { Property = Border.BorderThicknessProperty, Duration = AnimationDuration },
     };
 
-    private Control BuildSinglePreview(TileConfig config)
+    private Control BuildSinglePreview(TileConfig config, Border root)
     {
         _statesByEntityId.TryGetValue(config.EntityId, out var state);
         var iconKey = config.CustomIcon ?? (state is not null ? HaEntityDisplay.IconFor(state) : "circle");
@@ -289,20 +338,18 @@ public partial class TileLayoutEditor : UserControl
         var panel = new Panel();
         panel.Children.Add(stack);
 
-        var sizeButton = new Button
+        var resizeGrip = new Border
         {
-            Content = config.Size == TileSize.Wide ? "W" : "S",
-            Width = 24, Height = 20, Padding = new Thickness(0), FontSize = 10,
+            Child = new PathIcon { Data = Geometry.Parse(TileIcons.PathFor("resize-handle")), Width = 12, Height = 12, Opacity = 0.7 },
+            Width = 24, Height = 20,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
             Margin = new Thickness(0, 0, 26, 2),
+            Cursor = new Cursor(StandardCursorType.BottomRightCorner),
+            Background = Brushes.Transparent,
         };
-        ToolTip.SetTip(sizeButton, Loc.Instance.Tr("Tiles.ToggleSizeTooltip"));
-        sizeButton.Click += async (_, e) =>
-        {
-            e.Handled = true;
-            await AppSettings.SetTileSizeAsync(config.EntityId, config.Size == TileSize.Wide ? TileSize.Small : TileSize.Wide);
-        };
-        panel.Children.Add(sizeButton);
+        ToolTip.SetTip(resizeGrip, Loc.Instance.Tr("Tiles.ResizeTooltip"));
+        AttachResizeHandlers(resizeGrip, root, config);
+        panel.Children.Add(resizeGrip);
 
         var editButton = new Button
         {
@@ -318,8 +365,8 @@ public partial class TileLayoutEditor : UserControl
         {
             e.Handled = true;
             var isSensor = state?.Domain == "sensor";
-            TileEditFlyout.Show(editButton, config.CustomLabel, config.CustomIcon, defaultLabel, defaultIconKey, isSensor, config.IsGauge,
-                async (newLabel, newIcon, isGauge) => await AppSettings.UpdateTileAsync(config.EntityId, newLabel, newIcon, isGauge));
+            TileEditFlyout.Show(editButton, config.CustomLabel, config.CustomIcon, defaultLabel, defaultIconKey, isSensor, config.IsGauge, config.CustomColor,
+                async (newLabel, newIcon, isGauge, newColor) => await AppSettings.UpdateTileAsync(config.EntityId, newLabel, newIcon, isGauge, newColor));
         };
         panel.Children.Add(editButton);
 
@@ -440,6 +487,94 @@ public partial class TileLayoutEditor : UserControl
     }
 
     /// <summary>
+    /// Drag-to-resize via a corner grip, replacing the old Small/Wide toggle button — mirrors the
+    /// flyout window's own edge-drag resize (BeginResizeDrag isn't usable here since this is a plain
+    /// child control, not a real OS window, so it's the same pointer-capture technique whole-tile
+    /// reordering above already uses). Growing right bumps the column span to 2 (Wide), growing
+    /// down bumps the row span to 2 (Tall), and both at once gives Large — snapped per axis at
+    /// whichever half-cell threshold the pointer has crossed, not tracked as a continuous size.
+    /// </summary>
+    private void AttachResizeHandlers(Border grip, Border root, TileConfig config)
+    {
+        grip.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(grip).Properties.IsLeftButtonPressed) return;
+            e.Handled = true; // don't let this also register as the whole-card reorder-drag on root
+
+            _resizingCard = root;
+            _resizingConfig = config;
+            var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+            _resizeStartPointerPos = e.GetPosition(canvas);
+            _resizeStartColSpan = TileLayoutCompactor.ColSpanFor(config.Size);
+            _resizeStartRowSpan = TileLayoutCompactor.RowSpanFor(config.Size);
+
+            root.Transitions = null; // tracks the pointer 1:1 while resizing, same reasoning as the reorder-drag
+            e.Pointer.Capture(grip);
+            root.ZIndex = 100;
+            root.Opacity = 0.85;
+        };
+
+        grip.PointerMoved += (_, e) =>
+        {
+            if (!ReferenceEquals(_resizingCard, root) || _resizingConfig is null) return;
+
+            var (colSpan, rowSpan) = ComputeResizedSpan(e, root);
+            root.Width = colSpan * CellWidth - 2 * TileMargin;
+            root.Height = rowSpan * CellHeight - 2 * TileMargin;
+
+            UpdateResizePreview(_resizingConfig, colSpan, rowSpan);
+        };
+
+        grip.PointerReleased += async (_, e) =>
+        {
+            if (!ReferenceEquals(_resizingCard, root) || _resizingConfig is null) return;
+
+            e.Pointer.Capture(null);
+            root.ZIndex = 0;
+            root.Opacity = 1;
+            root.Transitions = BuildCardTransitions();
+
+            var (colSpan, rowSpan) = ComputeResizedSpan(e, root);
+            var resizedConfig = _resizingConfig;
+            _resizingCard = null;
+            _resizingConfig = null;
+
+            // Always committed, even back to the same size — RefreshAsync (via ConnectionChanged)
+            // settles the card back to its correct Width/Height either way, the same "snap back to
+            // the real arrangement" behavior the reorder-drag's own reject cases rely on.
+            await AppSettings.SetTileSizeAsync(resizedConfig.EntityId, SizeFor(colSpan, rowSpan));
+        };
+    }
+
+    private (int ColSpan, int RowSpan) ComputeResizedSpan(PointerEventArgs e, Border root)
+    {
+        var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+        var delta = e.GetPosition(canvas) - _resizeStartPointerPos;
+        var colSpan = Math.Clamp(_resizeStartColSpan + (int)Math.Round(delta.X / CellWidth), 1, 2);
+        var rowSpan = Math.Clamp(_resizeStartRowSpan + (int)Math.Round(delta.Y / CellHeight), 1, 2);
+        return (colSpan, rowSpan);
+    }
+
+    /// <summary>Same "make room" live reflow as UpdateDragPreview, but for a tile growing/shrinking in place rather than moving — every other tile slides to where it'd land if the resize were dropped right now.</summary>
+    private void UpdateResizePreview(TileConfig resizingConfig, int colSpan, int rowSpan)
+    {
+        var candidateSize = SizeFor(colSpan, rowSpan);
+        var hypothetical = _currentConfigs
+            .Select(c => c.EntityId == resizingConfig.EntityId ? c with { Size = candidateSize } : c)
+            .ToList();
+        var preview = TileLayoutCompactor.Defragment(hypothetical, _liveColumnCount);
+        ApplyPositions(preview, excluding: resizingConfig.EntityId);
+    }
+
+    private static TileSize SizeFor(int colSpan, int rowSpan) => (colSpan, rowSpan) switch
+    {
+        (2, 2) => TileSize.Large,
+        (2, 1) => TileSize.Wide,
+        (1, 2) => TileSize.Tall,
+        _ => TileSize.Small,
+    };
+
+    /// <summary>
     /// Live feedback while dragging, mirroring Windows Start Menu: hovering squarely over a
     /// mergeable tile highlights it (the deliberate "stack these" gesture); anything else previews
     /// the reorder by sliding the affected tiles into their would-be positions in real time, so
@@ -492,7 +627,7 @@ public partial class TileLayoutEditor : UserControl
         var colSpan = TileLayoutCompactor.ColSpanFor(draggedConfig.Size);
         var rowSpan = TileLayoutCompactor.RowSpanFor(draggedConfig.Size);
         var row = Math.Max(0, (int)Math.Round((Canvas.GetTop(card) - TileMargin) / CellHeight));
-        var col = Math.Clamp((int)Math.Round((Canvas.GetLeft(card) - TileMargin) / CellWidth), 0, TileLayoutCompactor.ColumnCount - colSpan);
+        var col = Math.Clamp((int)Math.Round((Canvas.GetLeft(card) - TileMargin) / CellWidth), 0, _liveColumnCount - colSpan);
 
         var overlapping = _currentConfigs
             .Where(c => c.EntityId != draggedConfig.EntityId && TileLayoutCompactor.Overlaps(row, col, colSpan, rowSpan, c))
@@ -518,7 +653,7 @@ public partial class TileLayoutEditor : UserControl
         var moved = _currentConfigs.First(c => c.EntityId == draggedEntityId);
         var others = _currentConfigs.Where(c => c.EntityId != draggedEntityId).ToList();
         others.Insert(Math.Clamp(index, 0, others.Count), moved);
-        return TileLayoutCompactor.Defragment(others);
+        return TileLayoutCompactor.Defragment(others, _liveColumnCount);
     }
 
     private void ShowMergeHighlight(string key)
@@ -534,13 +669,18 @@ public partial class TileLayoutEditor : UserControl
         _mergeHighlightKey = key;
     }
 
+    /// <summary>Every card's normal (non-highlighted) background — the tile's own custom color if it has one, else the shared default.</summary>
+    private static IBrush CardBackgroundFor(TileConfig config) =>
+        config.CustomColor is { } hex && Color.TryParse(hex, out var color) ? new SolidColorBrush(color) : NormalBackgroundBrush;
+
     private void ClearMergeHighlight()
     {
         if (_mergeHighlightKey is not null && _cardsByKey.TryGetValue(_mergeHighlightKey, out var card))
         {
             card.BorderBrush = NormalBorderBrush;
             card.BorderThickness = new Thickness(1);
-            card.Background = NormalBackgroundBrush;
+            var config = _currentConfigs.FirstOrDefault(c => c.EntityId == _mergeHighlightKey);
+            card.Background = config is not null ? CardBackgroundFor(config) : NormalBackgroundBrush;
         }
         _mergeHighlightKey = null;
     }

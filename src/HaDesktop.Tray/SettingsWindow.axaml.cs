@@ -21,9 +21,24 @@ public partial class SettingsWindow : Window
 {
     private static readonly string[] PageNames = { "ConnectionPage", "TilesPage", "AppearancePage", "SensorsPage", "SystemPage", "NotificationsPage", "AboutPage" };
 
+    // Keyed by nav icon control name, in NavList/PageNames order.
+    private static readonly (string IconName, string IconKey)[] NavIcons =
+    {
+        ("ConnectionNavIcon", "wifi"),
+        ("TilesNavIcon", "grid"),
+        ("AppearanceNavIcon", "palette"),
+        ("SensorsNavIcon", "motion-sensor"),
+        ("SystemNavIcon", "cog"),
+        ("NotificationsNavIcon", "bell"),
+        ("AboutNavIcon", "info"),
+    };
+
     public SettingsWindow()
     {
         InitializeComponent();
+
+        foreach (var (iconName, iconKey) in NavIcons)
+            this.FindControl<PathIcon>(iconName)!.Data = Geometry.Parse(TileIcons.PathFor(iconKey));
 
         this.FindControl<ContentControl>("TileEditorHost")!.Content = new TileLayoutEditor();
 
@@ -545,18 +560,25 @@ public partial class SettingsWindow : Window
     /// the "GPU Engine" performance-counter path (used for non-NVIDIA GPUs) always returns null on
     /// its very first sample by design (it has no prior value yet to diff against), so a second
     /// sample a moment later is needed before concluding it's genuinely unavailable.
+    ///
+    /// Each CollectAsync is wrapped in Task.Run so its synchronous Win32/perf-counter work (disk
+    /// and GPU-Engine PerformanceCounter creation in particular) runs on a thread-pool thread
+    /// instead of resuming on this window's UI thread after CollectAsync's own first await — the
+    /// very first PerformanceCounter ever constructed in the process has to build perflib's
+    /// counter/help name tables from the registry, a one-time cost of hundreds of ms that would
+    /// otherwise freeze the Settings window for a moment the first time it's opened.
     /// </summary>
     private async Task TestGpuAvailabilityAsync()
     {
         try
         {
-            var first = await SystemSensorCollector.Current.CollectAsync();
+            var first = await Task.Run(() => SystemSensorCollector.Current.CollectAsync());
             _gpuAvailable = first.GpuPercent is not null;
 
             if (!_gpuAvailable)
             {
                 await Task.Delay(300);
-                var second = await SystemSensorCollector.Current.CollectAsync();
+                var second = await Task.Run(() => SystemSensorCollector.Current.CollectAsync());
                 _gpuAvailable = second.GpuPercent is not null;
             }
         }

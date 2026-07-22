@@ -1,6 +1,5 @@
 {
   "Tray.Settings": "Paramètres",
-  "Tray.SignOut": "Se déconnecter",
   "Tray.Quit": "Quitter",
   "Tray.Tooltip": "HA Desktop",
 
@@ -82,6 +81,7 @@
 
   "TileEdit.CustomName": "Nom personnalisé",
   "TileEdit.Icon": "Icône",
+  "TileEdit.Color": "Couleur",
   "TileEdit.Save": "Enregistrer",
   "TileEdit.ResetToDefault": "Réinitialiser",
   "TileEdit.DisplayAsGauge": "Afficher en jauge",
@@ -162,7 +162,7 @@
   "Tiles.MediaBackgroundTitle": "Arrière-plan flouté avec la pochette d'album",
   "Tiles.MediaBackgroundDescription": "Utilise la pochette du titre en cours comme arrière-plan flouté de la carte.",
   "Tiles.NoTilesChosen": "Aucune tuile choisie pour l'instant.",
-  "Tiles.ToggleSizeTooltip": "Changer la taille de la tuile (Petite/Large)",
+  "Tiles.ResizeTooltip": "Faites glisser pour redimensionner (largeur et hauteur)",
   "Tiles.RenameTooltip": "Renommer ou changer l'icône",
 
   "TileEditor.Instructions": "Faites glisser une tuile pour la réorganiser. Déposez une petite tuile directement sur une autre pour en empiler jusqu'à 4 dans un seul emplacement — faites glisser une tuile hors d'un groupe pour la détacher à nouveau.",
