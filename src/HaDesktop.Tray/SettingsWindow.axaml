@@ -437,6 +437,29 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
+
+                    <Border CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" Padding="20"
+                            Margin="0,12,0,0">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" Spacing="2">
+                                    <TextBlock Text="{loc:Tr Update.Header}" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="{loc:Tr Update.Description}" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <ToggleSwitch Name="UpdateCheckToggle" Grid.Column="1" VerticalAlignment="Center"
+                                              OnContent="" OffContent="" Click="OnUpdateCheckToggled" />
+                            </Grid>
+
+                            <TextBlock Name="UpdateStatusText" FontSize="13" TextWrapping="Wrap" />
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Name="CheckForUpdatesButton" Content="{loc:Tr Update.CheckNow}" Click="OnCheckForUpdatesClicked" />
+                                <Button Name="ViewReleaseButton" Content="{loc:Tr Update.ViewRelease}" Click="OnViewReleaseClicked"
+                                        Classes="accent" IsVisible="False" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Grid>
         </ScrollViewer>

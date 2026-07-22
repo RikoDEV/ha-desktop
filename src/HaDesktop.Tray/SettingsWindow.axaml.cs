@@ -13,6 +13,7 @@ using HaDesktop.Core.Autostart;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Sensors;
 using HaDesktop.Core.Storage;
+using HaDesktop.Core.Updates;
 using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
@@ -66,6 +67,7 @@ public partial class SettingsWindow : Window
             Loc.Instance.LanguageChanged -= OnLanguageChangedRefresh;
         };
         _ = RefreshUpdatesThenInstanceInfoAsync();
+        _ = CheckForAppUpdateAsync();
     }
 
     /// <summary>
@@ -85,6 +87,9 @@ public partial class SettingsWindow : Window
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         this.FindControl<TextBlock>("AboutVersionText")!.Text = version is null ? Loc.Instance.Tr("About.DevelopmentBuild") : version.ToString(3);
+
+        this.FindControl<ToggleSwitch>("UpdateCheckToggle")!.IsChecked = AppSettings.UpdateCheckEnabled;
+        RenderUpdateStatus();
     }
 
     private void OnAuthorLinkClicked(object? sender, RoutedEventArgs e)
@@ -103,6 +108,98 @@ public partial class SettingsWindow : Window
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/RikoDEV/ha-desktop") { UseShellExecute = true });
         }
         catch { /* best effort — no default browser handler, nothing sensible to do */ }
+    }
+
+    private void OnViewReleaseClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_latestReleaseUrl is null) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_latestReleaseUrl) { UseShellExecute = true });
+        }
+        catch { /* best effort — no default browser handler, nothing sensible to do */ }
+    }
+
+    private async void OnUpdateCheckToggled(object? sender, RoutedEventArgs e)
+    {
+        var isChecked = this.FindControl<ToggleSwitch>("UpdateCheckToggle")!.IsChecked == true;
+        await AppSettings.SetUpdateCheckEnabledAsync(isChecked);
+
+        if (isChecked)
+        {
+            _ = CheckForAppUpdateAsync();
+        }
+        else
+        {
+            _appUpdateStatus = null;
+            _latestVersionLabel = null;
+            _latestReleaseUrl = null;
+            RenderUpdateStatus();
+        }
+    }
+
+    private async void OnCheckForUpdatesClicked(object? sender, RoutedEventArgs e) => await CheckForAppUpdateAsync();
+
+    private AppUpdateCheckStatus? _appUpdateStatus;
+    private string? _latestVersionLabel;
+    private string? _latestReleaseUrl;
+    private int _appUpdateCheckToken;
+
+    /// <summary>
+    /// Runs on Settings open and on "Check Now" — respects the toggle (a manual click still checks
+    /// even while auto-check is off, same as HA's own Updates card lets you refresh regardless of
+    /// any polling setting). Never surfaces network errors as a false "you're up to date"; see
+    /// <see cref="GitHubUpdateChecker"/>.
+    /// </summary>
+    private async Task CheckForAppUpdateAsync()
+    {
+        if (!AppSettings.UpdateCheckEnabled)
+        {
+            RenderUpdateStatus();
+            return;
+        }
+
+        var myToken = ++_appUpdateCheckToken;
+        _appUpdateStatus = null;
+        RenderUpdateStatus();
+        this.FindControl<Button>("CheckForUpdatesButton")!.IsEnabled = false;
+
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var result = version is null
+            ? AppUpdateCheckResult.Failed
+            : await GitHubUpdateChecker.CheckAsync(version);
+
+        if (myToken != _appUpdateCheckToken) return; // superseded by a later check while we were awaiting
+
+        this.FindControl<Button>("CheckForUpdatesButton")!.IsEnabled = true;
+        _appUpdateStatus = result.Status;
+        _latestVersionLabel = result.LatestVersion;
+        _latestReleaseUrl = result.ReleaseUrl;
+        RenderUpdateStatus();
+    }
+
+    /// <summary>Re-renders from the last known result — called after a real check and again on language
+    /// switch, so switching languages doesn't re-hit GitHub's API just to relocalize the same status.</summary>
+    private void RenderUpdateStatus()
+    {
+        var statusText = this.FindControl<TextBlock>("UpdateStatusText")!;
+        var viewReleaseButton = this.FindControl<Button>("ViewReleaseButton")!;
+
+        if (!AppSettings.UpdateCheckEnabled)
+        {
+            statusText.Text = Loc.Instance.Tr("Update.Disabled");
+            viewReleaseButton.IsVisible = false;
+            return;
+        }
+
+        statusText.Text = _appUpdateStatus switch
+        {
+            null => Loc.Instance.Tr("Update.Checking"),
+            AppUpdateCheckStatus.UpdateAvailable => Loc.Instance.Tr("Update.Available", _latestVersionLabel),
+            AppUpdateCheckStatus.Failed => Loc.Instance.Tr("Update.Failed"),
+            _ => Loc.Instance.Tr("Update.UpToDate"),
+        };
+        viewReleaseButton.IsVisible = _appUpdateStatus == AppUpdateCheckStatus.UpdateAvailable;
     }
 
     private void OnNavSelectionChanged(object? sender, SelectionChangedEventArgs e)

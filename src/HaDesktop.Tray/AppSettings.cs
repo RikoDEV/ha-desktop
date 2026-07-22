@@ -33,6 +33,7 @@ public static class AppSettings
     public static FlyoutWindowPreferences FlyoutWindowPrefs { get; private set; } = FlyoutWindowPreferences.Default;
     public static MobileAppRegistration? Registration { get; private set; }
     public static bool NotificationsEnabled { get; private set; } = true;
+    public static bool UpdateCheckEnabled { get; private set; } = true;
     public static AppLanguage Language => Loc.Instance.Current;
 
     /// <summary>Most recent notifications received via HA's Local Push channel, newest first. In-memory only, capped at 10.</summary>
@@ -72,6 +73,7 @@ public static class AppSettings
         FlyoutWindowPrefs = await FlyoutWindowPreferencesStore.LoadAsync();
         Registration = await MobileAppRegistrationStore.LoadAsync();
         NotificationsEnabled = await NotificationPreferencesStore.LoadAsync();
+        UpdateCheckEnabled = await UpdateCheckPreferencesStore.LoadAsync();
 
         var languagePrefs = await LanguagePreferencesStore.LoadAsync();
         Loc.Instance.SetLanguage(languagePrefs.Language);
@@ -96,6 +98,12 @@ public static class AppSettings
     {
         NotificationsEnabled = enabled;
         await NotificationPreferencesStore.SaveAsync(enabled);
+    }
+
+    public static async Task SetUpdateCheckEnabledAsync(bool enabled)
+    {
+        UpdateCheckEnabled = enabled;
+        await UpdateCheckPreferencesStore.SaveAsync(enabled);
     }
 
     public static async Task SetMediaPlayerPreferencesAsync(MediaPlayerPreferences prefs)
