@@ -696,16 +696,56 @@ public static class AppSettings
                 await EstablishClientAsync();
                 return;
             }
+            catch (HaRefreshTokenInvalidException)
+            {
+                await ForgetDeadSessionAsync(failedClient);
+                return;
+            }
             catch
             {
-                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
+                // Transient failure (HA unreachable, network blip) — keep retrying, but back off
+                // much further than a few seconds so a prolonged outage doesn't itself look like
+                // a burst of invalid-auth requests to HA's ban protection.
+                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 300));
             }
         }
     }
 
+    /// <summary>
+    /// The refresh token itself is dead (revoked, HA reinstalled, etc.) — retrying can never
+    /// succeed, and doing so anyway would just keep hitting HA's /auth/token endpoint forever,
+    /// which HA counts toward its IP-ban threshold the same as any other invalid-auth request
+    /// (POST /auth/token is decorated with @log_invalid_auth in HA's own auth component — verified
+    /// against home-assistant/core source, not assumed). Forget the dead session, stop every timer
+    /// that would otherwise keep retrying against it, and let the user sign in again.
+    /// </summary>
+    private static async Task ForgetDeadSessionAsync(HaClient? clientToDispose)
+    {
+        _refreshTimer?.Dispose();
+        _refreshTimer = null;
+        _sensorTimer?.Dispose();
+        _sensorTimer = null;
+        _registrationHealthTimer?.Dispose();
+        _registrationHealthTimer = null;
+
+        if (clientToDispose is not null && ReferenceEquals(Client, clientToDispose))
+        {
+            await clientToDispose.DisposeAsync();
+            Client = null;
+        }
+
+        Credentials = null;
+        Registration = null;
+        await CredentialStore.Current.ClearAsync();
+        ConnectionChanged?.Invoke();
+    }
+
+    private static TimeSpan _refreshRetryBackoff = TimeSpan.FromSeconds(10);
+
     private static void ScheduleRefresh()
     {
         _refreshTimer?.Dispose();
+        _refreshRetryBackoff = TimeSpan.FromSeconds(10);
 
         // Refresh a couple minutes before the access token actually expires
         // (default HA lifetime is 30 min) so the WS connection never lapses.
@@ -722,14 +762,23 @@ public static class AppSettings
         {
             await Credentials!.RefreshAsync();
             await EstablishClientAsync();
+            ScheduleRefresh();
+        }
+        catch (HaRefreshTokenInvalidException)
+        {
+            await ForgetDeadSessionAsync(Client);
         }
         catch
         {
+            // Transient failure — retry, but with growing backoff instead of ScheduleRefresh's
+            // fixed 10-second floor (computed from ExpiresAtUtc, which never advances while
+            // refreshes keep failing — that used to mean a dead refresh token got retried roughly
+            // every 10 seconds forever, hitting HA's /auth/token endpoint far harder than the
+            // WS-reconnect path ever did. This is what was actually driving the IP ban.
             // TODO: surface reconnect failure via tray icon state instead of silently retrying.
-        }
-        finally
-        {
-            ScheduleRefresh();
+            _refreshTimer?.Dispose();
+            _refreshTimer = new Timer(_ => _ = RefreshAndReconnectAsync(), null, _refreshRetryBackoff, Timeout.InfiniteTimeSpan);
+            _refreshRetryBackoff = TimeSpan.FromSeconds(Math.Min(_refreshRetryBackoff.TotalSeconds * 2, 300));
         }
     }
 }

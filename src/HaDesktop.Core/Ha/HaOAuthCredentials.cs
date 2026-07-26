@@ -1,7 +1,18 @@
+using System.Net;
 using System.Net.Http;
 using System.Text.Json.Nodes;
 
 namespace HaDesktop.Core.Ha;
+
+/// <summary>
+/// Thrown by <see cref="HaOAuthCredentials.RefreshAsync"/> when HA rejects the refresh token
+/// itself (revoked from HA's UI, HA reinstalled, etc.) rather than some transient problem
+/// (network blip, HA momentarily unreachable). This is a terminal failure — retrying with the
+/// same refresh token will never succeed, so callers must stop retrying instead of hammering
+/// HA's /auth/token endpoint, which HA counts the same as any other invalid-auth request toward
+/// its IP-ban threshold.
+/// </summary>
+public sealed class HaRefreshTokenInvalidException(string message) : Exception(message);
 
 /// <summary>
 /// OAuth2 tokens obtained via the browser-based Home Assistant login flow
@@ -31,7 +42,15 @@ public sealed class HaOAuthCredentials
         using var response = await http.PostAsync($"{BaseUrl}/auth/token", form, ct).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
+        {
+            // HA answers a dead/revoked refresh token with 400 + {"error":"invalid_grant"} —
+            // distinct from a transient failure (HA down, network blip), which is worth telling
+            // apart because retrying a dead refresh token can never succeed.
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized)
+                throw new HaRefreshTokenInvalidException($"HA rejected the refresh token ({(int)response.StatusCode}): {body}");
+
             throw new InvalidOperationException($"HA token refresh failed ({(int)response.StatusCode}): {body}");
+        }
 
         var json = JsonNode.Parse(body)!.AsObject();
         AccessToken = json["access_token"]!.GetValue<string>();
