@@ -276,12 +276,21 @@ public static class AppSettings
         {
             await Credentials.RefreshAsync();
         }
-        catch
+        catch (HaRefreshTokenInvalidException)
         {
             // The refresh token itself was rejected (revoked, HA reinstalled, etc.) — this is the
             // one case that actually means the saved session is gone for good.
             Credentials = null;
             await CredentialStore.Current.ClearAsync();
+            return false;
+        }
+        catch
+        {
+            // Transient: HA isn't reachable yet. This runs at app startup, which on a boot-with-
+            // Windows install is routinely *before* the network (or HA itself) is up, so treating
+            // it like a dead session threw the user back to the sign-in screen every morning.
+            // Keep the saved session and retry on the usual backoff instead.
+            ScheduleRefreshRetry();
             return false;
         }
 
@@ -297,6 +306,7 @@ public static class AppSettings
             // some other reason (HA temporarily unreachable, a network blip during an abrupt
             // restart, etc.). Keep the saved credentials so the next retry/relaunch can still use
             // them instead of forcing the user through a full sign-in again.
+            ScheduleRefreshRetry();
             return false;
         }
     }
@@ -360,6 +370,7 @@ public static class AppSettings
 
         client.NotificationReceived += OnNotificationReceived;
         client.CommandReceived += OnRemoteCommandReceived;
+        client.RestUnauthorized += () => _ = HandleRestUnauthorizedAsync(client);
 
         Client = client;
         await client.ConnectAsync();
@@ -683,6 +694,7 @@ public static class AppSettings
         if (!ReferenceEquals(Client, failedClient) || Credentials is null) return;
 
         var delay = TimeSpan.FromSeconds(2);
+        var handshakeRejected = false;
         while (ReferenceEquals(Client, failedClient))
         {
             await Task.Delay(delay);
@@ -690,9 +702,12 @@ public static class AppSettings
 
             try
             {
-                // Refresh first — a network blip that outlasted the access token's
-                // lifetime would otherwise fail auth and never recover.
-                await Credentials!.RefreshAsync();
+                // Refresh first if the token is at or near expiry — a network blip that outlasted
+                // the access token's lifetime would otherwise fail the WS handshake and never
+                // recover. A failed handshake is a wrong-login strike on HA's side, so it's worth
+                // spending a token refresh to avoid one; a still-valid token needs no such call.
+                if (Credentials!.ExpiresAtUtc - DateTimeOffset.UtcNow < TimeSpan.FromMinutes(1))
+                    await Credentials.RefreshAsync();
                 await EstablishClientAsync();
                 return;
             }
@@ -700,6 +715,24 @@ public static class AppSettings
             {
                 await ForgetDeadSessionAsync(failedClient);
                 return;
+            }
+            catch (HaAuthFailedException)
+            {
+                // HA rejected the token at the handshake — a wrong-login strike, not a network
+                // problem, so this must never become a retry loop. One more attempt with a
+                // deliberately re-minted token, then give up and make the user sign in again;
+                // anything beyond that is just feeding HA's ban counter.
+                if (handshakeRejected)
+                {
+                    await ForgetDeadSessionAsync(failedClient);
+                    return;
+                }
+
+                handshakeRejected = true;
+                try { await Credentials!.RefreshAsync(); }
+                catch (HaRefreshTokenInvalidException) { await ForgetDeadSessionAsync(failedClient); return; }
+                catch { /* transient — the retry below re-attempts the whole sequence */ }
+                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 300));
             }
             catch
             {
@@ -761,11 +794,30 @@ public static class AppSettings
         try
         {
             await Credentials!.RefreshAsync();
-            await EstablishClientAsync();
+
+            // Deliberately does NOT tear the WebSocket down anymore. HA authenticates a WS
+            // connection once, at handshake time, and keeps it for the socket's lifetime — it
+            // only drops it when the *refresh* token is revoked, never because the access token
+            // behind it aged out. Rebuilding the client every ~28 minutes was therefore pure
+            // churn, and each rebuild left every holder of the old client (camera tiles, the
+            // media widget, the detail flyout) pointed at a disposed connection carrying a dead
+            // token — the actual source of the slow 401 trickle that got this machine IP-banned.
+            // REST callers now read the refreshed token straight through HaConnectionSettings.
+            if (Client is null || Client.ConnectionState != HaConnectionState.Connected)
+                await EstablishClientAsync();
+            else
+                Client.ClearRestUnauthorized();
+
             ScheduleRefresh();
         }
         catch (HaRefreshTokenInvalidException)
         {
+            await ForgetDeadSessionAsync(Client);
+        }
+        catch (HaAuthFailedException)
+        {
+            // HA refused a token it had just minted seconds earlier — nothing a retry can fix, and
+            // every attempt is another wrong-login strike. Drop the session instead of looping.
             await ForgetDeadSessionAsync(Client);
         }
         catch
@@ -776,9 +828,44 @@ public static class AppSettings
             // every 10 seconds forever, hitting HA's /auth/token endpoint far harder than the
             // WS-reconnect path ever did. This is what was actually driving the IP ban.
             // TODO: surface reconnect failure via tray icon state instead of silently retrying.
-            _refreshTimer?.Dispose();
-            _refreshTimer = new Timer(_ => _ = RefreshAndReconnectAsync(), null, _refreshRetryBackoff, Timeout.InfiniteTimeSpan);
-            _refreshRetryBackoff = TimeSpan.FromSeconds(Math.Min(_refreshRetryBackoff.TotalSeconds * 2, 300));
+            ScheduleRefreshRetry();
+        }
+    }
+
+    /// <summary>
+    /// Re-arms the refresh timer on the growing backoff rather than the schedule derived from
+    /// ExpiresAtUtc — which never advances while refreshes keep failing, so it would otherwise pin
+    /// retries to its 10-second floor forever.
+    /// </summary>
+    private static void ScheduleRefreshRetry()
+    {
+        _refreshTimer?.Dispose();
+        _refreshTimer = new Timer(_ => _ = RefreshAndReconnectAsync(), null, _refreshRetryBackoff, Timeout.InfiniteTimeSpan);
+        _refreshRetryBackoff = TimeSpan.FromSeconds(Math.Min(_refreshRetryBackoff.TotalSeconds * 2, 300));
+    }
+
+    /// <summary>
+    /// A 401 from a REST call means the access token this client is sending is already dead —
+    /// pull a fresh one immediately instead of waiting for the scheduled refresh, and only then
+    /// let the suppressed callers (camera polling) resume. Without this the client would sit
+    /// latched-off until the next scheduled refresh.
+    /// </summary>
+    private static async Task HandleRestUnauthorizedAsync(HaClient client)
+    {
+        if (!ReferenceEquals(Client, client) || Credentials is null) return;
+
+        try
+        {
+            await Credentials.RefreshAsync();
+            client.ClearRestUnauthorized();
+        }
+        catch (HaRefreshTokenInvalidException)
+        {
+            await ForgetDeadSessionAsync(client);
+        }
+        catch
+        {
+            // Transient — leave the latch closed; the scheduled refresh clears it once it succeeds.
         }
     }
 }

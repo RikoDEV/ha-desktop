@@ -68,13 +68,14 @@ public partial class CameraTile : UserControl
     {
         if (_client is null || EntityId is null) return;
 
-        // A dropped/reconnecting client means the access token backing this REST call may already
-        // be stale — polling through that anyway hammers Home Assistant's camera_proxy endpoint
-        // with a bad token every tick until reconnect finishes, which is exactly the pattern that
-        // trips HA's own IP-ban-after-N-failed-logins protection (this has happened: HA banned the
-        // machine's IP overnight after the tile kept polling through an expired token). Skipping
-        // the call while disconnected is cheap insurance — the next successful tick after
-        // reconnect just resumes normally.
+        // A dropped/reconnecting/disposed client means the access token backing this REST call may
+        // already be stale — polling through that anyway hammers Home Assistant's camera_proxy
+        // endpoint with a bad token every tick, which is exactly the pattern that trips HA's own
+        // IP-ban-after-N-failed-logins protection (this has happened: HA banned the machine's IP
+        // overnight after the tile kept polling through an expired token). This guard only became
+        // effective once DisposeAsync started reflecting itself in ConnectionState — a replaced
+        // client used to keep reporting Connected forever. HaClient latches a 401 as a second line
+        // of defence; the next successful tick after reconnect just resumes normally.
         if (_client.ConnectionState != HaConnectionState.Connected) return;
 
         var myToken = ++_refreshToken;
