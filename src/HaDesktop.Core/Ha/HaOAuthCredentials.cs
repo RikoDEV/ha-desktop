@@ -27,7 +27,13 @@ public sealed class HaOAuthCredentials
     public required string RefreshToken { get; set; }
     public required DateTimeOffset ExpiresAtUtc { get; set; }
 
-    public HaConnectionSettings ToConnectionSettings() => new() { BaseUrl = BaseUrl, AccessToken = AccessToken };
+    /// <summary>
+    /// The returned settings stay bound to <c>this</c> credential object rather than copying the
+    /// current token out of it, so a long-lived holder keeps working across background refreshes
+    /// (see <see cref="HaConnectionSettings.AccessTokenProvider"/> for why a stale copy is actively
+    /// dangerous and not merely useless).
+    /// </summary>
+    public HaConnectionSettings ToConnectionSettings() => new() { BaseUrl = BaseUrl, AccessTokenProvider = () => AccessToken };
 
     public async Task RefreshAsync(CancellationToken ct = default)
     {

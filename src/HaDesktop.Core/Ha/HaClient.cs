@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
@@ -9,6 +10,15 @@ using System.Text.Json.Nodes;
 namespace HaDesktop.Core.Ha;
 
 public enum HaConnectionState { Disconnected, Connecting, Connected, AuthFailed }
+
+/// <summary>
+/// HA rejected the access token during the WebSocket handshake. Distinct from every other connect
+/// failure because HA counts a rejected handshake as a wrong login (websocket_api/auth.py calls
+/// process_wrong_login), and that counter only resets when HA restarts — so retrying the same
+/// token on a timer walks straight into an IP ban. Callers must refresh the token before trying
+/// again, and give up rather than repeat a second rejection.
+/// </summary>
+public sealed class HaAuthFailedException(string message) : Exception(message);
 
 /// <summary>
 /// Talks to Home Assistant over its native WebSocket API: authenticates,
@@ -27,6 +37,8 @@ public sealed class HaClient : IAsyncDisposable
     private int _stateChangedSubscriptionId;
     private int _pushNotificationSubscriptionId;
     private string? _pushWebhookId;
+    private volatile bool _disposed;
+    private volatile bool _restUnauthorized;
 
     public event Action<HaEntityState>? StateChanged;
     public event Action<HaConnectionState>? ConnectionStateChanged;
@@ -39,6 +51,9 @@ public sealed class HaClient : IAsyncDisposable
     /// instead of <see cref="NotificationReceived"/>, never both, for the same incoming message.
     /// </summary>
     public event Action<HaRemoteCommand>? CommandReceived;
+
+    /// <summary>Raised once when an authenticated REST call is rejected with 401 — see <see cref="NoteRestUnauthorized"/>. Further REST calls are suppressed until <see cref="ClearRestUnauthorized"/>.</summary>
+    public event Action? RestUnauthorized;
 
     public HaConnectionState ConnectionState { get; private set; } = HaConnectionState.Disconnected;
 
@@ -70,7 +85,7 @@ public sealed class HaClient : IAsyncDisposable
         if (authType != "auth_ok")
         {
             SetState(HaConnectionState.AuthFailed);
-            throw new InvalidOperationException("HA auth failed: " + authResult);
+            throw new HaAuthFailedException("HA auth failed: " + authResult);
         }
 
         HaVersion = authResult?["ha_version"]?.GetValue<string>();
@@ -248,6 +263,8 @@ public sealed class HaClient : IAsyncDisposable
     /// <summary>Fetches one still frame via HA's camera_proxy REST endpoint. Not a live stream — polling this periodically keeps camera tiles lightweight instead of decoding continuous MJPEG/WebRTC.</summary>
     public async Task<byte[]?> GetCameraSnapshotAsync(string entityId, CancellationToken ct = default)
     {
+        if (_disposed || _restUnauthorized) return null;
+
         try
         {
             var uri = new Uri(_settings.RestBaseUri, $"camera_proxy/{entityId}");
@@ -255,6 +272,7 @@ public sealed class HaClient : IAsyncDisposable
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.AccessToken);
 
             using var response = await CameraHttp.SendAsync(request, ct).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.Unauthorized) NoteRestUnauthorized();
             if (!response.IsSuccessStatusCode) return null;
 
             return await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
@@ -450,6 +468,8 @@ public sealed class HaClient : IAsyncDisposable
     /// <summary>Same rule the camera/album-art fetches use: an absolute URL is fetched as-is, a relative one (e.g. "/local/icon.png") is resolved against the HA instance and sent with the same bearer token as every other API call.</summary>
     private async Task<byte[]?> TryDownloadImageAsync(string rawUrl)
     {
+        if (_disposed) return null;
+
         try
         {
             Uri uri;
@@ -469,6 +489,7 @@ public sealed class HaClient : IAsyncDisposable
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.AccessToken);
 
             using var response = await NotificationImageHttp.SendAsync(request).ConfigureAwait(false);
+            if (needsAuth && response.StatusCode == HttpStatusCode.Unauthorized) NoteRestUnauthorized();
             return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false) : null;
         }
         catch
@@ -546,8 +567,31 @@ public sealed class HaClient : IAsyncDisposable
         ConnectionStateChanged?.Invoke(state);
     }
 
+    /// <summary>
+    /// Latches the first 401 from an authenticated REST call so a poller (camera tiles tick every
+    /// 10s, the detail flyout every 2s) can't turn one rejected token into an unbounded stream of
+    /// them — each 401 is a strike toward HA's IP ban, and that counter never decays on its own.
+    /// The owner refreshes the token and calls <see cref="ClearRestUnauthorized"/> to resume.
+    /// </summary>
+    private void NoteRestUnauthorized()
+    {
+        if (_restUnauthorized) return;
+        _restUnauthorized = true;
+        RestUnauthorized?.Invoke();
+    }
+
+    public void ClearRestUnauthorized() => _restUnauthorized = false;
+
     public async ValueTask DisposeAsync()
     {
+        // Reflected in ConnectionState — but deliberately without raising ConnectionStateChanged,
+        // which is the caller's signal for an *unexpected* drop worth reconnecting after. Anything
+        // still holding this client (a camera tile that outlived a reconnect, say) checks
+        // ConnectionState before making REST calls, and used to see a stale "Connected" here and
+        // keep polling with this client's dead token.
+        _disposed = true;
+        ConnectionState = HaConnectionState.Disconnected;
+
         _receiveLoopCts?.Cancel();
         if (_socket is { State: WebSocketState.Open })
         {
