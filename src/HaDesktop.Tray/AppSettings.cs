@@ -23,6 +23,13 @@ public static class AppSettings
     private static Timer? _sensorTimer;
     private static Timer? _registrationHealthTimer;
 
+    // Guards EnsureMobileAppRegisteredAsync end-to-end. Without this, two callers racing while
+    // Registration is null (e.g. EstablishClientAsync's own call landing at the same moment as the
+    // sensor timer's immediate first tick, or the sensor timer firing again mid-flight of a
+    // ForceReregisterAsync retry) would both see no registration and both POST a brand-new device
+    // to HA — the previous device is never deleted, so it just sits there duplicated.
+    private static readonly SemaphoreSlim _registrationLock = new(1, 1);
+
     public static HaOAuthCredentials? Credentials { get; private set; }
     public static HaClient? Client { get; private set; }
     public static List<TileConfig> SelectedTiles { get; private set; } = new();
@@ -564,8 +571,14 @@ public static class AppSettings
         if (Credentials is null) return;
         if (Registration is not null && Registration.BaseUrl == Credentials.BaseUrl) return;
 
+        await _registrationLock.WaitAsync();
         try
         {
+            // Re-check now that we hold the lock: whoever raced us here first may have already
+            // finished registering while we were waiting.
+            if (Credentials is null) return;
+            if (Registration is not null && Registration.BaseUrl == Credentials.BaseUrl) return;
+
             var deviceId = Registration?.DeviceId ?? Guid.NewGuid().ToString("N");
             var webhookId = await MobileAppClient.RegisterAsync(Credentials.ToConnectionSettings(), deviceId, SensorPrefs.DeviceName);
 
@@ -575,6 +588,10 @@ public static class AppSettings
         catch
         {
             // best effort — PushSensorsAsync just skips this tick and retries next time
+        }
+        finally
+        {
+            _registrationLock.Release();
         }
     }
 
