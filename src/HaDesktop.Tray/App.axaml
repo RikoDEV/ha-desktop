@@ -7,7 +7,27 @@
     <Application.Styles>
         <!-- PreferUserAccentColor reads the OS accent color (Windows accent, macOS accent
              preference, Linux desktop-portal accent) instead of a fixed default blue, so
-             buttons/toggles/highlights match the user's actual system theme. -->
-        <styling:FluentAvaloniaTheme PreferUserAccentColor="True" />
+             buttons/toggles/highlights match the user's actual system theme.
+             PreferSystemTheme defaulted to true in FluentAvaloniaUI 2.x, which is how this
+             app picked up OS dark/light mode; 3.x flipped that default to false, silently
+             reverting everyone to a light background regardless of the OS setting. Set it
+             back explicitly instead of relying on Application.RequestedThemeVariant="Default"
+             alone, which doesn't reliably resolve to the OS theme on its own. -->
+        <styling:FluentAvaloniaTheme PreferUserAccentColor="True" PreferSystemTheme="True" />
+
+        <!--
+            Fluent "glow" hover effect shared by every tray tile (QuickToggleTile, SensorTile,
+            GaugeTile, CoverTile, LawnMowerTile, ClimateTile, CameraTile, GroupTile): each one's
+            root UserControl carries Classes="tile", so this applies uniformly regardless of
+            whether the tile's own content root is a Border, Button, or ToggleButton — a soft
+            accent-colored DropShadowEffect (zero offset, so it reads as a glow, not a shadow)
+            renders around the tile's actual rounded shape without needing to touch each tile's
+            individual template.
+        -->
+        <Style Selector="UserControl.tile:pointerover">
+            <Setter Property="Effect">
+                <DropShadowEffect Color="{DynamicResource SystemAccentColor}" BlurRadius="20" OffsetX="0" OffsetY="0" Opacity="0.85" />
+            </Setter>
+        </Style>
     </Application.Styles>
 </Application>

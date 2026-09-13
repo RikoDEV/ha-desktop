@@ -44,8 +44,8 @@
                 <ExperimentalAcrylicMaterial
                     BackgroundSource="Digger"
                     TintColor="{DynamicResource SolidBackgroundFillColorBase}"
-                    TintOpacity="0.5"
-                    MaterialOpacity="0.55" />
+                    TintOpacity="0.75"
+                    MaterialOpacity="0.75" />
             </ExperimentalAcrylicBorder.Material>
 
             <Border CornerRadius="8"
