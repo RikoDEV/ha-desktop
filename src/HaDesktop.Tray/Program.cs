@@ -1,6 +1,7 @@
 using System;
 using System.Net.Http;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using HaDesktop.Core.Ha;
@@ -11,6 +12,15 @@ namespace HaDesktop.Tray;
 
 class Program
 {
+    /// <summary>
+    /// Name of the single-instance mutex: a second launch (autostart racing a manual click, or a
+    /// click on the shortcut while the icon is already in the tray) exits instead of adding a
+    /// duplicate tray icon.
+    /// </summary>
+    private const string InstanceMutexName = "HaDesktop.Tray.SingleInstance";
+
+    private static Mutex? _instanceMutex;
+
     // Initialization code. Don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
     // yet and stuff might break.
@@ -24,7 +34,20 @@ class Program
             return;
         }
 
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        // Held for the lifetime of the process; a second copy exits instead of putting a
+        // duplicate icon in the tray.
+        _instanceMutex = new Mutex(initiallyOwned: true, InstanceMutexName, out var isFirstInstance);
+        if (!isFirstInstance) return;
+
+        try
+        {
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
+        finally
+        {
+            _instanceMutex.ReleaseMutex();
+            _instanceMutex.Dispose();
+        }
     }
 
     /// <summary>
