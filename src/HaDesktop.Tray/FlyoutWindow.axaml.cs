@@ -468,6 +468,11 @@ public partial class FlyoutWindow : Window
         catch { /* best effort — tile resyncs from the next state_changed event */ }
     }
 
+    // Tiles are built once and then only updated in place, so a detail popup opened later must
+    // not use the state captured at build time — it'd show e.g. the brightness from back then.
+    private HaEntityState LatestState(HaEntityState builtWith) =>
+        _lastKnownStates.TryGetValue(builtWith.EntityId, out var latest) ? latest : builtWith;
+
     private Control BuildToggleTile(HaEntityState state, TileConfig config, HaClient client)
     {
         var tile = new QuickToggleTile { EntityId = state.EntityId };
@@ -486,9 +491,9 @@ public partial class FlyoutWindow : Window
         };
 
         if (state.Domain == "light")
-            tile.DetailRequested += (_, _) => LightDetailFlyout.Show(tile, state.EntityId, state, client);
+            tile.DetailRequested += (_, _) => LightDetailFlyout.Show(tile, state.EntityId, LatestState(state), client);
         else if (state.Domain == "humidifier")
-            tile.DetailRequested += (_, _) => HumidifierDetailFlyout.Show(tile, state.EntityId, state, client);
+            tile.DetailRequested += (_, _) => HumidifierDetailFlyout.Show(tile, state.EntityId, LatestState(state), client);
 
         _toggleTilesByEntityId[state.EntityId] = tile;
         return tile;
@@ -557,7 +562,7 @@ public partial class FlyoutWindow : Window
         tile.SetCustomColor(ParseColor(config.CustomColor));
         tile.ModeChangeRequested += async (_, mode) =>
             await TryCallAsync(client, "climate", "set_hvac_mode", state.EntityId, new System.Text.Json.Nodes.JsonObject { ["hvac_mode"] = mode });
-        tile.DetailRequested += (_, _) => ThermostatDetailFlyout.Show(tile, state.EntityId, state, client);
+        tile.DetailRequested += (_, _) => ThermostatDetailFlyout.Show(tile, state.EntityId, LatestState(state), client);
 
         _climateTilesByEntityId[state.EntityId] = tile;
         return tile;
