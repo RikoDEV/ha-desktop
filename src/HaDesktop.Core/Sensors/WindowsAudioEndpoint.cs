@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
 using HaDesktop.Core.Diagnostics;
+using HaDesktop.Core.Interop;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -16,37 +18,31 @@ namespace HaDesktop.Core.Sensors;
 /// COM activation failure, etc.) degrades to a no-op/null result rather than throwing.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal static class WindowsAudioEndpoint
+internal static partial class WindowsAudioEndpoint
 {
     public static (double? VolumePercent, bool? IsMuted) GetState()
     {
-        return WithInterface<IAudioEndpointVolume, (double?, bool?)>(EDataFlow.eRender, endpointVolume =>
+        return WithInterface<IAudioEndpointVolume, (double?, bool?)>(EDataFlow.eRender, AudioEndpointVolumeId, endpointVolume =>
         {
-            endpointVolume.GetMasterVolumeLevelScalar(out var level);
-            endpointVolume.GetMute(out var muted);
-            return (Math.Round(level * 100.0, 0), muted);
+            Marshal.ThrowExceptionForHR(endpointVolume.GetMasterVolumeLevelScalar(out var level));
+            Marshal.ThrowExceptionForHR(endpointVolume.GetMute(out var muted));
+            return (Math.Round(level * 100.0, 0), muted != 0);
         }) ?? (null, null);
     }
 
     public static bool SetMute(bool muted)
     {
         var eventContext = Guid.Empty;
-        return WithInterface<IAudioEndpointVolume, bool>(EDataFlow.eRender, endpointVolume =>
-        {
-            endpointVolume.SetMute(muted, ref eventContext);
-            return true;
-        }) ?? false;
+        return WithInterface<IAudioEndpointVolume, bool>(EDataFlow.eRender, AudioEndpointVolumeId, endpointVolume =>
+            endpointVolume.SetMute(muted ? 1 : 0, in eventContext) >= 0) ?? false;
     }
 
     public static bool SetVolumePercent(double percent)
     {
         var level = (float)(Math.Clamp(percent, 0, 100) / 100.0);
         var eventContext = Guid.Empty;
-        return WithInterface<IAudioEndpointVolume, bool>(EDataFlow.eRender, endpointVolume =>
-        {
-            endpointVolume.SetMasterVolumeLevelScalar(level, ref eventContext);
-            return true;
-        }) ?? false;
+        return WithInterface<IAudioEndpointVolume, bool>(EDataFlow.eRender, AudioEndpointVolumeId, endpointVolume =>
+            endpointVolume.SetMasterVolumeLevelScalar(level, in eventContext) >= 0) ?? false;
     }
 
     /// <summary>Friendly name of the default playback device (e.g. "Speakers (Realtek Audio)"), or null if there isn't one.</summary>
@@ -58,79 +54,72 @@ internal static class WindowsAudioEndpoint
     /// <summary>True if the default playback device currently has an active (non-silent) signal — i.e. something is actually playing sound right now.</summary>
     public static bool? IsOutputActive()
     {
-        return WithInterface<IAudioMeterInformation, bool>(EDataFlow.eRender, meter =>
+        return WithInterface<IAudioMeterInformation, bool>(EDataFlow.eRender, AudioMeterInformationId, meter =>
         {
-            meter.GetPeakValue(out var peak);
+            Marshal.ThrowExceptionForHR(meter.GetPeakValue(out var peak));
             return peak > 0.001f;
         });
     }
 
     private static string? GetDeviceName(EDataFlow dataFlow)
     {
-        object? enumeratorObj = null;
-        IMMDevice? device = null;
-        object? storeObj = null;
-        try
+        return WithDevice<string>(dataFlow, device =>
         {
-            enumeratorObj = new MMDeviceEnumeratorComObject();
-            var enumerator = (IMMDeviceEnumerator)enumeratorObj;
-            enumerator.GetDefaultAudioEndpoint(dataFlow, ERole.eMultimedia, out device);
-
-            device.OpenPropertyStore(StgmRead, out storeObj);
-            var store = (IPropertyStore)storeObj;
-
-            var key = PropertyKeyDeviceFriendlyName;
-            store.GetValue(ref key, out var value);
+            Marshal.ThrowExceptionForHR(device.OpenPropertyStore(StgmRead, out var store));
             try
             {
-                return value.VarType == VtLpwstr && value.PointerValue != IntPtr.Zero
-                    ? Marshal.PtrToStringUni(value.PointerValue)
-                    : null;
+                var key = PropertyKeyDeviceFriendlyName;
+                Marshal.ThrowExceptionForHR(store.GetValue(in key, out var value));
+                try
+                {
+                    return value.VarType == VtLpwstr && value.PointerValue != IntPtr.Zero
+                        ? Marshal.PtrToStringUni(value.PointerValue)
+                        : null;
+                }
+                finally
+                {
+                    PropVariantClear(ref value);
+                }
             }
             finally
             {
-                PropVariantClear(ref value);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Swallowed(ex);
-            return null;
-        }
-        finally
-        {
-            if (storeObj is not null) Marshal.ReleaseComObject(storeObj);
-            if (device is not null) Marshal.ReleaseComObject(device);
-            if (enumeratorObj is not null) Marshal.ReleaseComObject(enumeratorObj);
-        }
-    }
-
-    private static T? WithInterface<TInterface, T>(EDataFlow dataFlow, Func<TInterface, T> action) where T : struct =>
-        WithDevice(dataFlow, device =>
-        {
-            object? comObj = null;
-            try
-            {
-                var iid = typeof(TInterface).GUID;
-                device.Activate(ref iid, ClsCtxAll, IntPtr.Zero, out comObj);
-                return action((TInterface)comObj);
-            }
-            finally
-            {
-                if (comObj is not null) Marshal.ReleaseComObject(comObj);
+                ComActivation.Release(store);
             }
         });
+    }
 
-    private static T? WithDevice<T>(EDataFlow dataFlow, Func<IMMDevice, T> action) where T : struct
+    private static T? WithInterface<TInterface, T>(EDataFlow dataFlow, Guid interfaceId, Func<TInterface, T> action)
+        where TInterface : class
+        where T : struct
     {
-        object? enumeratorObj = null;
+        T? result = null;
+        WithDevice<object>(dataFlow, device =>
+        {
+            Marshal.ThrowExceptionForHR(device.Activate(in interfaceId, ClsCtxAll, IntPtr.Zero, out var pointer));
+            var activated = ComActivation.Wrap<TInterface>(pointer);
+            try
+            {
+                result = action(activated);
+            }
+            finally
+            {
+                ComActivation.Release(activated);
+            }
+
+            return null;
+        });
+        return result;
+    }
+
+    /// <summary>Runs <paramref name="action"/> against the default endpoint for a direction; null if there isn't one or anything along the way fails.</summary>
+    private static T? WithDevice<T>(EDataFlow dataFlow, Func<IMMDevice, T?> action) where T : class
+    {
+        IMMDeviceEnumerator? enumerator = null;
         IMMDevice? device = null;
         try
         {
-            enumeratorObj = new MMDeviceEnumeratorComObject();
-            var enumerator = (IMMDeviceEnumerator)enumeratorObj;
-            enumerator.GetDefaultAudioEndpoint(dataFlow, ERole.eMultimedia, out device);
-
+            enumerator = ComActivation.Create<IMMDeviceEnumerator>(MMDeviceEnumeratorClsid, MMDeviceEnumeratorId);
+            Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(dataFlow, ERole.eMultimedia, out device));
             return action(device);
         }
         catch (Exception ex)
@@ -140,8 +129,8 @@ internal static class WindowsAudioEndpoint
         }
         finally
         {
-            if (device is not null) Marshal.ReleaseComObject(device);
-            if (enumeratorObj is not null) Marshal.ReleaseComObject(enumeratorObj);
+            ComActivation.Release(device);
+            ComActivation.Release(enumerator);
         }
     }
 
@@ -149,75 +138,81 @@ internal static class WindowsAudioEndpoint
     private const int StgmRead = 0;
     private const ushort VtLpwstr = 31;
 
+    private static readonly Guid MMDeviceEnumeratorClsid = new("BCDE0395-E52F-467C-8E3D-C4579291692E");
+    private static readonly Guid MMDeviceEnumeratorId = new("A95664D2-9614-4F35-A746-DE8DB63617E6");
+    private static readonly Guid AudioEndpointVolumeId = new("5CDF2C82-841E-4546-9722-0CF74078229A");
+    private static readonly Guid AudioMeterInformationId = new("C02216F6-8C67-4B5B-9D00-D008E73E0064");
+
     private static PropertyKey PropertyKeyDeviceFriendlyName => new(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), 14);
 
     [DllImport("ole32.dll")]
     private static extern int PropVariantClear(ref PropVariant pvar);
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct PropertyKey
+    internal struct PropertyKey
     {
         public Guid FormatId;
         public int PropertyId;
         public PropertyKey(Guid formatId, int propertyId) { FormatId = formatId; PropertyId = propertyId; }
     }
 
-    [StructLayout(LayoutKind.Explicit)]
-    private struct PropVariant
+    // A PROPVARIANT is 24 bytes on 64-bit (16 on 32-bit); only the type tag and a pointer-sized payload are read.
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    internal struct PropVariant
     {
         [FieldOffset(0)] public ushort VarType;
         [FieldOffset(8)] public IntPtr PointerValue;
     }
 
-    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    private class MMDeviceEnumeratorComObject { }
+    internal enum EDataFlow { eRender = 0, eCapture = 1, eAll = 2 }
+    internal enum ERole { eConsole = 0, eMultimedia = 1, eCommunications = 2 }
 
-    private enum EDataFlow { eRender = 0, eCapture = 1, eAll = 2 }
-    private enum ERole { eConsole = 0, eMultimedia = 1, eCommunications = 2 }
+    // Every method keeps its real HRESULT return ([PreserveSig]); methods this app never calls are
+    // declared only to keep the ones it does call at the right vtable slot.
 
-    [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IMMDeviceEnumerator
+    [GeneratedComInterface, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
+    internal partial interface IMMDeviceEnumerator
     {
-        int EnumAudioEndpoints(EDataFlow dataFlow, int dwStateMask, out IntPtr ppDevices);
-        int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice ppEndpoint);
+        [PreserveSig] int EnumAudioEndpoints(EDataFlow dataFlow, int dwStateMask, out IntPtr ppDevices);
+        [PreserveSig] int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, [MarshalUsing(typeof(UniqueComInterfaceMarshaller<IMMDevice>))] out IMMDevice ppEndpoint);
     }
 
-    [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IMMDevice
+    [GeneratedComInterface, Guid("D666063F-1587-4E43-81F1-B948E807363F")]
+    internal partial interface IMMDevice
     {
-        int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-        int OpenPropertyStore(int stgmAccess, [MarshalAs(UnmanagedType.IUnknown)] out object ppProperties);
+        [PreserveSig] int Activate(in Guid iid, int dwClsCtx, IntPtr pActivationParams, out IntPtr ppInterface);
+        [PreserveSig] int OpenPropertyStore(int stgmAccess, [MarshalUsing(typeof(UniqueComInterfaceMarshaller<IPropertyStore>))] out IPropertyStore ppProperties);
     }
 
-    [ComImport, Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IPropertyStore
+    [GeneratedComInterface, Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99")]
+    internal partial interface IPropertyStore
     {
-        int GetCount(out int cProps);
-        int GetAt(int iProp, out PropertyKey pkey);
-        int GetValue(ref PropertyKey key, out PropVariant pv);
+        [PreserveSig] int GetCount(out int cProps);
+        [PreserveSig] int GetAt(int iProp, out PropertyKey pkey);
+        [PreserveSig] int GetValue(in PropertyKey key, out PropVariant pv);
     }
 
-    [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IAudioEndpointVolume
+    [GeneratedComInterface, Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
+    internal partial interface IAudioEndpointVolume
     {
-        int RegisterControlChangeNotify(IntPtr pNotify);
-        int UnregisterControlChangeNotify(IntPtr pNotify);
-        int GetChannelCount(out int channelCount);
-        int SetMasterVolumeLevel(float level, ref Guid eventContext);
-        int SetMasterVolumeLevelScalar(float level, ref Guid eventContext);
-        int GetMasterVolumeLevel(out float level);
-        int GetMasterVolumeLevelScalar(out float level);
-        int SetChannelVolumeLevel(uint channel, float level, ref Guid eventContext);
-        int SetChannelVolumeLevelScalar(uint channel, float level, ref Guid eventContext);
-        int GetChannelVolumeLevel(uint channel, out float level);
-        int GetChannelVolumeLevelScalar(uint channel, out float level);
-        int SetMute([MarshalAs(UnmanagedType.Bool)] bool isMuted, ref Guid eventContext);
-        int GetMute([MarshalAs(UnmanagedType.Bool)] out bool isMuted);
+        [PreserveSig] int RegisterControlChangeNotify(IntPtr pNotify);
+        [PreserveSig] int UnregisterControlChangeNotify(IntPtr pNotify);
+        [PreserveSig] int GetChannelCount(out int channelCount);
+        [PreserveSig] int SetMasterVolumeLevel(float level, in Guid eventContext);
+        [PreserveSig] int SetMasterVolumeLevelScalar(float level, in Guid eventContext);
+        [PreserveSig] int GetMasterVolumeLevel(out float level);
+        [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+        [PreserveSig] int SetChannelVolumeLevel(uint channel, float level, in Guid eventContext);
+        [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, in Guid eventContext);
+        [PreserveSig] int GetChannelVolumeLevel(uint channel, out float level);
+        [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
+        [PreserveSig] int SetMute(int isMuted, in Guid eventContext);
+        [PreserveSig] int GetMute(out int isMuted);
     }
 
-    [ComImport, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IAudioMeterInformation
+    [GeneratedComInterface, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064")]
+    internal partial interface IAudioMeterInformation
     {
-        int GetPeakValue(out float pfPeak);
+        [PreserveSig] int GetPeakValue(out float pfPeak);
     }
 }

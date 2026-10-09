@@ -62,7 +62,7 @@ public partial class EntityPickerWindow : Window
             return;
         }
 
-        var selected = new HashSet<string>(AppSettings.SelectedTiles.Select(t => t.EntityId));
+        var selected = TileSelection.SelectedEntityIds(AppSettings.SelectedTiles);
         var controllable = states.OrderBy(HaEntityDisplay.LabelFor, StringComparer.OrdinalIgnoreCase);
 
         foreach (var state in controllable)
@@ -117,12 +117,9 @@ public partial class EntityPickerWindow : Window
 
     private async void OnSaveClicked(object? sender, RoutedEventArgs e)
     {
-        // Preserve any existing rename/icon overrides for entities that stay selected.
-        var existingById = AppSettings.SelectedTiles.ToDictionary(t => t.EntityId);
-        var chosen = _rows
-            .Where(r => r.CheckBox.IsChecked == true)
-            .Select(r => existingById.TryGetValue(r.EntityId, out var existing) ? existing : new TileConfig(r.EntityId))
-            .ToList();
+        // Existing tiles keep their rename/icon overrides, and group tiles keep their still-ticked members.
+        var chosenIds = _rows.Where(r => r.CheckBox.IsChecked == true).Select(r => r.EntityId).ToList();
+        var chosen = TileSelection.Apply(AppSettings.SelectedTiles, chosenIds);
 
         await AppSettings.SetSelectedTilesAsync(chosen);
         Close();

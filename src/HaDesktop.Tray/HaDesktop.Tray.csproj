@@ -13,6 +13,11 @@
 
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+    <!-- The runtime sizes the gen0 allocation budget from the CPU cache: on a large desktop CPU
+         that let ~48 MB of garbage (and every finalizable handle with it) pile up before the first
+         collection, which an app allocating a few hundred KB a minute takes hours to reach — and
+         the memory stays committed afterwards. 4 MB keeps collections tiny and the footprint flat. -->
+    <RuntimeHostConfigurationOption Include="System.GC.Gen0MaxBudget" Value="4194304" />
   </ItemGroup>
 
   <ItemGroup>

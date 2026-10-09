@@ -45,18 +45,18 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Publish self-contained win-x64
+      # NativeAOT: no JIT and no bundled runtime to load, which is what keeps the tray app's idle
+      # footprint small. The native linker is found through vswhere, which isn't on PATH by default.
+      - name: Publish native win-x64
         shell: pwsh
-        run: >
-          dotnet publish src/HaDesktop.Tray/HaDesktop.Tray.csproj -c Release -r win-x64
-          --self-contained true
-          -p:Version=$env:VERSION
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:PublishTrimmed=true
-          -p:PublishReadyToRun=true
-          -p:DebugType=None
-          -o publish/win-x64
+        run: |
+          $env:PATH += ";${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+          dotnet publish src/HaDesktop.Tray/HaDesktop.Tray.csproj -c Release -r win-x64 `
+            -p:PublishAot=true `
+            -p:Version=$env:VERSION `
+            -p:DebugType=None `
+            -o publish/win-x64
+          Remove-Item publish/win-x64/*.pdb
 
       - name: Create portable zip
         shell: pwsh

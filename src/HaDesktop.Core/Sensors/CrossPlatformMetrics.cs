@@ -9,6 +9,9 @@ namespace HaDesktop.Core.Sensors;
 internal static class CrossPlatformMetrics
 {
     private static (long Bytes, DateTime Timestamp)? _lastNetworkSample;
+    private static readonly TimeSpan ThroughputInterfaceLifetime = TimeSpan.FromMinutes(5);
+    private static NetworkInterface? _throughputInterface;
+    private static DateTime _throughputInterfacePickedAt;
     private static volatile bool _nvidiaSmiMissing;
 
     public static double? SampleDiskPercent()
@@ -42,17 +45,29 @@ internal static class CrossPlatformMetrics
     {
         try
         {
-            var iface = NetworkInterface.GetAllNetworkInterfaces()
-                .Where(n => n.OperationalStatus == OperationalStatus.Up
-                    && n.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel))
-                .Select(n => (Interface: n, Stats: n.GetIPv4Statistics()))
-                .OrderByDescending(x => x.Stats.BytesSent + x.Stats.BytesReceived)
-                .FirstOrDefault();
-
-            if (iface.Interface is null) return null;
-
-            var totalBytes = iface.Stats.BytesSent + iface.Stats.BytesReceived;
             var now = DateTime.UtcNow;
+
+            // Listing every interface is by far the costliest part of this (it rebuilds the whole
+            // adapter table, addresses included), so the busiest one is only re-picked every few
+            // minutes; in between, just that one interface's counters are re-read.
+            if (_throughputInterface is null || now - _throughputInterfacePickedAt > ThroughputInterfaceLifetime)
+            {
+                var picked = NetworkInterface.GetAllNetworkInterfaces()
+                    .Where(n => n.OperationalStatus == OperationalStatus.Up
+                        && n.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel))
+                    .Select(n => (Interface: n, Stats: n.GetIPv4Statistics()))
+                    .OrderByDescending(x => x.Stats.BytesSent + x.Stats.BytesReceived)
+                    .FirstOrDefault().Interface;
+
+                if (picked?.Id != _throughputInterface?.Id) _lastNetworkSample = null; // counters of a different adapter aren't comparable
+                _throughputInterface = picked;
+                _throughputInterfacePickedAt = now;
+            }
+
+            if (_throughputInterface is null) return null;
+
+            var stats = _throughputInterface.GetIPv4Statistics();
+            var totalBytes = stats.BytesSent + stats.BytesReceived;
 
             if (_lastNetworkSample is not { } last)
             {
@@ -71,6 +86,7 @@ internal static class CrossPlatformMetrics
         catch (Exception ex)
         {
             Log.Swallowed(ex);
+            _throughputInterface = null; // e.g. the adapter went away — pick again next time
             return null;
         }
     }

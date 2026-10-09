@@ -27,6 +27,8 @@ internal sealed class PdhQuery : IDisposable
     private IntPtr _query;
     private readonly IntPtr[] _counters;
     private bool _hasPreviousSample;
+    private IntPtr _instanceBuffer;
+    private uint _instanceBufferSize;
 
     private PdhQuery(IntPtr query, IntPtr[] counters)
     {
@@ -80,41 +82,47 @@ internal sealed class PdhQuery : IDisposable
         return value.Status is PdhCstatusValidData or PdhCstatusNewData ? value.DoubleValue : null;
     }
 
+    public delegate void InstanceReader(ReadOnlySpan<char> instanceName, double value);
+
     /// <summary>
     /// Every instance of a wildcard counter as of the last <see cref="Collect"/>, passed to
-    /// <paramref name="onInstance"/> as (instance name, value). Instances with no usable value yet
-    /// (they appeared since the previous sample) are left out. False if nothing could be read.
+    /// <paramref name="onInstance"/> as (instance name, value). The name is a view over PDH's own
+    /// buffer, valid only during the call — a busy desktop has hundreds of GPU engine instances,
+    /// and turning each name into a string on every sample was this app's largest steady source of
+    /// garbage. Instances with no usable value yet (they appeared since the previous sample) are
+    /// left out. False if nothing could be read.
     /// </summary>
-    public bool ReadInstances(int counterIndex, Action<string, double> onInstance)
+    public unsafe bool ReadInstances(int counterIndex, InstanceReader onInstance)
     {
         uint bufferSize = 0;
         var status = PdhGetFormattedCounterArrayW(_counters[counterIndex], PdhFmtDouble, ref bufferSize, out _, IntPtr.Zero);
         if (status != PdhMoreData || bufferSize == 0) return false;
 
-        var buffer = Marshal.AllocHGlobal((int)bufferSize);
-        try
+        if (_instanceBufferSize < bufferSize)
         {
-            if (PdhGetFormattedCounterArrayW(_counters[counterIndex], PdhFmtDouble, ref bufferSize, out var itemCount, buffer) != 0)
-                return false;
-
-            for (var i = 0; i < itemCount; i++)
-            {
-                var item = buffer + i * ItemSize;
-                var itemStatus = (uint)Marshal.ReadInt32(item, ItemStatusOffset);
-                if (itemStatus is not (PdhCstatusValidData or PdhCstatusNewData)) continue;
-
-                var name = Marshal.PtrToStringUni(Marshal.ReadIntPtr(item));
-                if (name is null) continue;
-
-                onInstance(name, BitConverter.Int64BitsToDouble(Marshal.ReadInt64(item, ItemValueOffset)));
-            }
-
-            return true;
+            // Kept between samples and only ever grown: the instance list is about the same size every time.
+            if (_instanceBuffer != IntPtr.Zero) Marshal.FreeHGlobal(_instanceBuffer);
+            _instanceBufferSize = bufferSize + bufferSize / 4;
+            _instanceBuffer = Marshal.AllocHGlobal((int)_instanceBufferSize);
         }
-        finally
+
+        bufferSize = _instanceBufferSize;
+        if (PdhGetFormattedCounterArrayW(_counters[counterIndex], PdhFmtDouble, ref bufferSize, out var itemCount, _instanceBuffer) != 0)
+            return false;
+
+        for (var i = 0; i < itemCount; i++)
         {
-            Marshal.FreeHGlobal(buffer);
+            var item = _instanceBuffer + i * ItemSize;
+            var itemStatus = (uint)Marshal.ReadInt32(item, ItemStatusOffset);
+            if (itemStatus is not (PdhCstatusValidData or PdhCstatusNewData)) continue;
+
+            var name = Marshal.ReadIntPtr(item);
+            if (name == IntPtr.Zero) continue;
+
+            onInstance(MemoryMarshal.CreateReadOnlySpanFromNullTerminated((char*)name), BitConverter.Int64BitsToDouble(Marshal.ReadInt64(item, ItemValueOffset)));
         }
+
+        return true;
     }
 
     public void Dispose()
@@ -122,6 +130,10 @@ internal sealed class PdhQuery : IDisposable
         if (_query == IntPtr.Zero) return;
         PdhCloseQuery(_query);
         _query = IntPtr.Zero;
+
+        if (_instanceBuffer != IntPtr.Zero) Marshal.FreeHGlobal(_instanceBuffer);
+        _instanceBuffer = IntPtr.Zero;
+        _instanceBufferSize = 0;
     }
 
     [StructLayout(LayoutKind.Sequential)]

@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
 using HaDesktop.Core.Diagnostics;
+using HaDesktop.Core.Interop;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -8,39 +10,51 @@ namespace HaDesktop.Core.Sensors;
 /// Lists connected cameras via DirectShow's classic device-enumeration API (ICreateDevEnum +
 /// CLSID_VideoInputDeviceCategory) — still the standard, ceremony-free way to enumerate capture
 /// devices from a plain desktop process; Media Foundation's equivalent needs an app-container/MTA
-/// dance for the same result. IMoniker's full vtable is declared up through BindToStorage (the only
+/// dance for the same result. IMoniker's vtable is declared up through BindToStorage (the only
 /// method actually called) purely to keep its slot at the right index — the placeholder methods
 /// before it are never invoked, so their (deliberately unfaithful) signatures don't matter.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal static class WindowsCameraEnumerator
+internal static partial class WindowsCameraEnumerator
 {
+    private const ushort VtBstr = 8;
+
+    private static readonly Guid SystemDeviceEnumClsid = new("62BE5D10-60EB-11d0-BD3B-00A0C911CE86");
+    private static readonly Guid CreateDevEnumId = new("29840822-5B84-11D0-BD3B-00A0C911CE86");
+    private static readonly Guid VideoInputDeviceCategory = new("860BB310-5D01-11d0-BD3B-00A0C911CE86");
+    private static readonly Guid PropertyBagId = new("55272A00-42CB-11CE-8135-00AA004BB851");
+
     /// <summary>Friendly name of the first available camera, or null if none is connected.</summary>
     public static string? GetFirstCameraName()
     {
-        object? sysDevEnumObj = null;
+        ICreateDevEnum? createDevEnum = null;
         IEnumMoniker? enumMoniker = null;
         IMoniker? moniker = null;
-        object? propBagObj = null;
+        IPropertyBag? propertyBag = null;
         try
         {
-            sysDevEnumObj = new SystemDeviceEnumComObject();
-            var createDevEnum = (ICreateDevEnum)sysDevEnumObj;
+            createDevEnum = ComActivation.Create<ICreateDevEnum>(SystemDeviceEnumClsid, CreateDevEnumId);
 
-            var videoCategory = VideoInputDeviceCategory;
-            var hr = createDevEnum.CreateClassEnumerator(ref videoCategory, out enumMoniker, 0);
+            var hr = createDevEnum.CreateClassEnumerator(in VideoInputDeviceCategory, out enumMoniker, 0);
             if (hr != 0 || enumMoniker is null) return null; // S_FALSE (no devices) or failure
 
             if (enumMoniker.Next(1, out moniker, out var fetched) != 0 || fetched == 0 || moniker is null)
                 return null;
 
-            var bagIid = typeof(IPropertyBag).GUID;
-            moniker.BindToStorage(IntPtr.Zero, IntPtr.Zero, ref bagIid, out propBagObj);
-            var propBag = (IPropertyBag)propBagObj!;
+            if (moniker.BindToStorage(IntPtr.Zero, IntPtr.Zero, in PropertyBagId, out var bagPointer) != 0 || bagPointer == IntPtr.Zero)
+                return null;
+            propertyBag = ComActivation.Wrap<IPropertyBag>(bagPointer);
 
-            object? value = null;
-            propBag.Read("FriendlyName", ref value, IntPtr.Zero);
-            return value as string;
+            var value = default(Variant);
+            if (propertyBag.Read("FriendlyName", ref value, IntPtr.Zero) != 0) return null;
+            try
+            {
+                return value.VarType == VtBstr && value.PointerValue != IntPtr.Zero ? Marshal.PtrToStringBSTR(value.PointerValue) : null;
+            }
+            finally
+            {
+                VariantClear(ref value);
+            }
         }
         catch (Exception ex)
         {
@@ -49,48 +63,54 @@ internal static class WindowsCameraEnumerator
         }
         finally
         {
-            if (propBagObj is not null) Marshal.ReleaseComObject(propBagObj);
-            if (moniker is not null) Marshal.ReleaseComObject(moniker);
-            if (enumMoniker is not null) Marshal.ReleaseComObject(enumMoniker);
-            if (sysDevEnumObj is not null) Marshal.ReleaseComObject(sysDevEnumObj);
+            ComActivation.Release(propertyBag);
+            ComActivation.Release(moniker);
+            ComActivation.Release(enumMoniker);
+            ComActivation.Release(createDevEnum);
         }
     }
 
-    private static Guid VideoInputDeviceCategory => new("860BB310-5D01-11d0-BD3B-00A0C911CE86");
+    [DllImport("oleaut32.dll")]
+    private static extern int VariantClear(ref Variant variant);
 
-    [ComImport, Guid("62BE5D10-60EB-11d0-BD3B-00A0C911CE86")]
-    private class SystemDeviceEnumComObject { }
-
-    [ComImport, Guid("29840822-5B84-11D0-BD3B-00A0C911CE86"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface ICreateDevEnum
+    // A VARIANT is 24 bytes on 64-bit (16 on 32-bit); only the type tag and a pointer-sized payload are read.
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    internal struct Variant
     {
-        int CreateClassEnumerator(ref Guid pType, out IEnumMoniker? ppEnumMoniker, int dwFlags);
+        [FieldOffset(0)] public ushort VarType;
+        [FieldOffset(8)] public IntPtr PointerValue;
     }
 
-    [ComImport, Guid("00000102-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IEnumMoniker
+    [GeneratedComInterface, Guid("29840822-5B84-11D0-BD3B-00A0C911CE86")]
+    internal partial interface ICreateDevEnum
     {
-        int Next(int celt, out IMoniker? rgelt, out int pceltFetched);
-        int Skip(int celt);
-        int Reset();
-        int Clone(out IEnumMoniker ppenum);
+        [PreserveSig] int CreateClassEnumerator(in Guid pType, [MarshalUsing(typeof(UniqueComInterfaceMarshaller<IEnumMoniker>))] out IEnumMoniker? ppEnumMoniker, int dwFlags);
     }
 
-    [ComImport, Guid("0000000f-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IMoniker
+    [GeneratedComInterface, Guid("00000102-0000-0000-C000-000000000046")]
+    internal partial interface IEnumMoniker
     {
-        int GetClassIdUnused();
-        int IsDirtyUnused();
-        int LoadUnused();
-        int SaveUnused();
-        int GetSizeMaxUnused();
-        int BindToObjectUnused();
-        int BindToStorage(IntPtr pbc, IntPtr pmkToLeft, ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] out object? ppvObj);
+        [PreserveSig] int Next(int celt, [MarshalUsing(typeof(UniqueComInterfaceMarshaller<IMoniker>))] out IMoniker? rgelt, out int pceltFetched);
+        [PreserveSig] int Skip(int celt);
+        [PreserveSig] int Reset();
+        [PreserveSig] int Clone(out IntPtr ppenum);
     }
 
-    [ComImport, Guid("55272A00-42CB-11CE-8135-00AA004BB851"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IPropertyBag
+    [GeneratedComInterface, Guid("0000000f-0000-0000-C000-000000000046")]
+    internal partial interface IMoniker
     {
-        int Read([MarshalAs(UnmanagedType.LPWStr)] string propName, ref object? propValue, IntPtr errorLog);
+        [PreserveSig] int GetClassIdUnused();
+        [PreserveSig] int IsDirtyUnused();
+        [PreserveSig] int LoadUnused();
+        [PreserveSig] int SaveUnused();
+        [PreserveSig] int GetSizeMaxUnused();
+        [PreserveSig] int BindToObjectUnused();
+        [PreserveSig] int BindToStorage(IntPtr pbc, IntPtr pmkToLeft, in Guid riid, out IntPtr ppvObj);
+    }
+
+    [GeneratedComInterface(StringMarshalling = StringMarshalling.Utf16), Guid("55272A00-42CB-11CE-8135-00AA004BB851")]
+    internal partial interface IPropertyBag
+    {
+        [PreserveSig] int Read(string propName, ref Variant propValue, IntPtr errorLog);
     }
 }

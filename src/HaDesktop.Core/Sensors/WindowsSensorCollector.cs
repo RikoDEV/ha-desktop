@@ -18,9 +18,12 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
     private PdhQuery? _gpuQuery;
     private bool _gpuQueryUnavailable;
     private readonly Dictionary<string, double> _gpuLoadByEngineType = new();
+    private readonly PdhQuery.InstanceReader _addGpuEngineLoad;
+
+    public WindowsSensorCollector() => _addGpuEngineLoad = AddGpuEngineLoad;
     private PdhQuery? _diskQuery;
     private bool _diskQueryUnavailable;
-    private (string? Ssid, string? Bssid, DateTime FetchedAt)? _wifiCache;
+    private (string? Ssid, string? Bssid, string? ConnectionType, DateTime FetchedAt)? _networkIdentity;
 
     public async Task<SensorSnapshot> CollectAsync(SensorPreferences prefs, CancellationToken ct = default)
     {
@@ -29,7 +32,7 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
         {
             var (volumePercent, isMuted) = prefs.ShareVolume ? WindowsAudioEndpoint.GetState() : default;
             var needsWifi = prefs.ShareSsid || prefs.ShareBssid || prefs.ShareConnectionType;
-            var (ssid, bssid) = needsWifi ? await GetWifiInfoAsync(ct) : default;
+            var (ssid, bssid, connectionType) = needsWifi ? await GetNetworkIdentityAsync(ct) : default;
             var diskSampled = (prefs.ShareDisk || prefs.ShareDiskThroughput) && CollectDiskCounters();
 
             return new(
@@ -54,7 +57,7 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
                 prefs.ShareCameraInUse ? WindowsPrivacyConsentStore.IsCameraInUse() : null,
                 ssid,
                 bssid,
-                prefs.ShareConnectionType ? WindowsWifiInfo.GetConnectionType(ssid) : null,
+                prefs.ShareConnectionType ? connectionType : null,
                 prefs.ShareDisplayCount ? WindowsDisplayInfo.GetDisplayCount() : null,
                 prefs.SharePrimaryDisplay ? WindowsDisplayInfo.GetPrimaryDisplayDescription() : null);
         }
@@ -64,15 +67,16 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
         }
     }
 
-    /// <summary>Which network this machine is on changes rarely, and finding out means spawning netsh — so the answer is reused for a couple of minutes rather than re-run on every 30s poll.</summary>
-    private async Task<(string? Ssid, string? Bssid)> GetWifiInfoAsync(CancellationToken ct)
+    /// <summary>Which network this machine is on changes rarely, and finding out means spawning netsh and listing every adapter — so the answer is reused for a couple of minutes rather than re-derived on every 30s poll.</summary>
+    private async Task<(string? Ssid, string? Bssid, string? ConnectionType)> GetNetworkIdentityAsync(CancellationToken ct)
     {
-        if (_wifiCache is { } cached && DateTime.UtcNow - cached.FetchedAt < WifiCacheLifetime)
-            return (cached.Ssid, cached.Bssid);
+        if (_networkIdentity is { } cached && DateTime.UtcNow - cached.FetchedAt < WifiCacheLifetime)
+            return (cached.Ssid, cached.Bssid, cached.ConnectionType);
 
         var (ssid, bssid) = await WindowsWifiInfo.GetWifiInfoAsync(ct);
-        _wifiCache = (ssid, bssid, DateTime.UtcNow);
-        return (ssid, bssid);
+        var connectionType = WindowsWifiInfo.GetConnectionType(ssid);
+        _networkIdentity = (ssid, bssid, connectionType, DateTime.UtcNow);
+        return (ssid, bssid, connectionType);
     }
 
     /// <summary>
@@ -173,22 +177,21 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
         // moment (3D, Compute, Video Decode/Encode, Copy) — summing every engine type
         // together would double-count a workload that touches several of them at once.
         _gpuLoadByEngineType.Clear();
-        var read = _gpuQuery.ReadInstances(0, (instanceName, value) =>
-        {
-            var engineType = GetEngineType(instanceName);
-            _gpuLoadByEngineType[engineType] = _gpuLoadByEngineType.GetValueOrDefault(engineType) + value;
-        });
-        if (!read) return null;
+        if (!_gpuQuery.ReadInstances(0, _addGpuEngineLoad)) return null;
 
         var busiest = 0.0;
         foreach (var load in _gpuLoadByEngineType.Values) busiest = Math.Max(busiest, load);
         return Math.Clamp(busiest, 0, 100);
     }
 
-    private static string GetEngineType(string instanceName)
+    /// <summary>Adds one engine instance's load to its engine type's total. Looked up by span, so only the handful of distinct engine types become strings — not each of the hundreds of instance names.</summary>
+    private void AddGpuEngineLoad(ReadOnlySpan<char> instanceName, double value)
     {
         var index = instanceName.IndexOf("engtype_", StringComparison.OrdinalIgnoreCase);
-        return index >= 0 ? instanceName[index..] : instanceName;
+        var engineType = index >= 0 ? instanceName[index..] : instanceName;
+
+        var totals = _gpuLoadByEngineType.GetAlternateLookup<ReadOnlySpan<char>>();
+        totals[engineType] = (totals.TryGetValue(engineType, out var total) ? total : 0) + value;
     }
 
     private static string? SampleActiveWindowTitle()
