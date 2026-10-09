@@ -5,7 +5,15 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\tray-icon.ico</ApplicationIcon>
+    <!-- A tray app is idle almost all the time: a background GC thread buys nothing here, and
+         ConserveMemory makes the GC compact (large object heap included) rather than leave freed
+         space committed after one of the app's rare allocation bursts. -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.2" />

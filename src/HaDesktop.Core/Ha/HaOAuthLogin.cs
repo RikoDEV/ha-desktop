@@ -127,7 +127,6 @@ public static class HaOAuthLogin
 
     private static async Task<HaOAuthCredentials> ExchangeCodeAsync(string baseUrl, string clientId, string redirectUri, string code, string codeVerifier, CancellationToken ct)
     {
-        using var http = new HttpClient();
         var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["grant_type"] = "authorization_code",
@@ -136,7 +135,7 @@ public static class HaOAuthLogin
             ["code_verifier"] = codeVerifier,
         });
 
-        using var response = await http.PostAsync($"{baseUrl}/auth/token", form, ct).ConfigureAwait(false);
+        using var response = await HaHttp.Client.PostAsync($"{baseUrl}/auth/token", form, ct).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"HA token exchange failed ({(int)response.StatusCode}): {body}");

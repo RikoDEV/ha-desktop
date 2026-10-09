@@ -17,7 +17,7 @@ public sealed record MobileAppSensor(
         var obj = new JsonObject
         {
             ["name"] = Name,
-            ["state"] = JsonValue.Create(State),
+            ["state"] = StateNode(),
             ["type"] = "sensor",
             ["unique_id"] = UniqueId,
         };
@@ -28,12 +28,22 @@ public sealed record MobileAppSensor(
         return obj;
     }
 
+    // Typed overloads rather than JsonValue.Create<object>, which serializes by reflection (and so breaks under trimming).
+    private JsonNode StateNode() => State switch
+    {
+        string text => JsonValue.Create(text),
+        double number => JsonValue.Create(number),
+        int number => JsonValue.Create(number),
+        bool flag => JsonValue.Create(flag),
+        _ => JsonValue.Create(State.ToString() ?? string.Empty),
+    };
+
     public JsonObject ToUpdatePayload()
     {
         var obj = new JsonObject
         {
             ["unique_id"] = UniqueId,
-            ["state"] = JsonValue.Create(State),
+            ["state"] = StateNode(),
             ["type"] = "sensor",
         };
         if (Icon is not null) obj["icon"] = Icon;

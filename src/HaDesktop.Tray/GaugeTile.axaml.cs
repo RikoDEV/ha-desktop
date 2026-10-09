@@ -1,8 +1,6 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
-using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
@@ -14,42 +12,42 @@ namespace HaDesktop.Tray;
 /// a muted background track plus a colored value arc (green/yellow/red by severity), with the
 /// current value centered underneath.
 /// </summary>
-public partial class GaugeTile : UserControl
+public partial class GaugeTile : UserControl, IEntityTile
 {
     private const double CenterX = 32;
     private const double CenterY = 30;
     private const double Radius = 26;
 
-    public string? EntityId { get; set; }
+    private TileConfig? _config;
 
     public GaugeTile()
     {
         InitializeComponent();
-        this.FindControl<Path>("TrackPath")!.Data = ArcGeometry(0, 1);
+        TrackPath.Data = ArcGeometry(0, 1);
     }
 
-    private void InitializeComponent()
+    public void Configure(TileConfig config, double cornerRadius)
     {
-        AvaloniaXamlLoader.Load(this);
+        _config = config;
+        RootBorder.CornerRadius = new CornerRadius(cornerRadius);
+        if (TileDimensions.CustomBrushFor(config) is { } brush) RootBorder.Background = brush;
+        this.SetTileSize(config.Size);
     }
 
-    public void SetContent(HaEntityState state, string label)
+    public void Update(HaEntityState state)
     {
-        this.FindControl<TextBlock>("LabelText")!.Text = label;
+        LabelText.Text = _config?.CustomLabel ?? HaEntityDisplay.LabelFor(state);
 
-        var fraction = HaEntityDisplay.GaugeFractionFor(state);
-        var valuePath = this.FindControl<Path>("ValuePath")!;
-
-        if (fraction is not { } f)
+        if (HaEntityDisplay.GaugeFractionFor(state) is not { } fraction)
         {
-            valuePath.Data = null;
-            this.FindControl<TextBlock>("ValueText")!.Text = "—";
+            ValuePath.Data = null;
+            ValueText.Text = "—";
             return;
         }
 
-        valuePath.Data = ArcGeometry(0, Math.Max(f, 0.001)); // a sliver even at 0 so the arc's rounded cap is visible
-        valuePath.Stroke = new SolidColorBrush(HaEntityDisplay.GaugeColorFor(f));
-        this.FindControl<TextBlock>("ValueText")!.Text = HaEntityDisplay.ValueFor(state);
+        ValuePath.Data = ArcGeometry(0, Math.Max(fraction, 0.001)); // a sliver even at 0 so the arc's rounded cap is visible
+        ValuePath.Stroke = HaEntityDisplay.GaugeBrushFor(fraction);
+        ValueText.Text = HaEntityDisplay.ValueFor(state);
     }
 
     /// <summary>
@@ -70,20 +68,5 @@ public partial class GaugeTile : UserControl
     {
         var angle = Math.PI * (1 - fraction); // 180° at fraction 0, 0° at fraction 1
         return new Point(CenterX + Radius * Math.Cos(angle), CenterY - Radius * Math.Sin(angle));
-    }
-
-    public void SetCornerRadius(double radius) =>
-        this.FindControl<Border>("RootBorder")!.CornerRadius = new CornerRadius(radius);
-
-    /// <summary>Overrides the tile's background with a user-picked color; a fresh tile instance already shows the theme default otherwise (see FlyoutWindow — tiles are rebuilt from scratch on every refresh), so this only ever needs to act when a color is actually set.</summary>
-    public void SetCustomColor(Color? color)
-    {
-        if (color is { } c) this.FindControl<Border>("RootBorder")!.Background = new SolidColorBrush(c);
-    }
-
-    public void SetSize(TileSize size)
-    {
-        Width = TileDimensions.WidthFor(size);
-        Height = TileDimensions.HeightFor(size);
     }
 }

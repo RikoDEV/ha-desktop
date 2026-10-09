@@ -99,7 +99,7 @@
                             <StackPanel Name="SignInPanel" Spacing="8">
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="{loc:Tr Connection.UrlLabel}" FontSize="12" Opacity="0.7" />
-                                    <TextBox Name="BaseUrlBox" Watermark="http://homeassistant.local:8123" />
+                                    <TextBox Name="BaseUrlBox" PlaceholderText="http://homeassistant.local:8123" />
                                 </StackPanel>
 
                                 <TextBlock Name="StatusText" FontSize="12" TextWrapping="Wrap" />
@@ -231,7 +231,7 @@
                             <StackPanel Spacing="12" Margin="16,8">
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="{loc:Tr Sensors.DeviceName}" FontSize="12" Opacity="0.7" />
-                                    <TextBox Name="DeviceNameBox" Watermark="HA Desktop" LostFocus="OnDeviceNameLostFocus" />
+                                    <TextBox Name="DeviceNameBox" PlaceholderText="HA Desktop" LostFocus="OnDeviceNameLostFocus" />
                                     <TextBlock Name="DeviceSlugPreview" FontSize="11" Opacity="0.6" />
                                 </StackPanel>
 

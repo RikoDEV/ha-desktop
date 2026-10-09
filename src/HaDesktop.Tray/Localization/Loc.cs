@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using HaDesktop.Core.Storage;
 
 namespace HaDesktop.Tray.Localization;
@@ -51,7 +52,7 @@ public sealed class Loc
 
         using var reader = new StreamReader(stream);
         var json = reader.ReadToEnd();
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new Dictionary<string, string>();
+        return JsonSerializer.Deserialize(json, LocJsonContext.Default.DictionaryStringString) ?? new Dictionary<string, string>();
     }
 
     public void SetLanguage(AppLanguage language)
@@ -78,3 +79,7 @@ public sealed class Loc
 
     public string Tr(string key, params object?[] args) => string.Format(Tr(key), args);
 }
+
+/// <summary>Source-generated, so loading the string tables doesn't depend on runtime reflection (which trimming strips).</summary>
+[JsonSerializable(typeof(Dictionary<string, string>))]
+internal sealed partial class LocJsonContext : JsonSerializerContext;

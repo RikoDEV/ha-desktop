@@ -6,10 +6,10 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
 using HaDesktop.Core.Autostart;
+using HaDesktop.Core.Diagnostics;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Sensors;
 using HaDesktop.Core.Storage;
@@ -39,9 +39,9 @@ public partial class SettingsWindow : Window
         InitializeComponent();
 
         foreach (var (iconName, iconKey) in NavIcons)
-            this.FindControl<PathIcon>(iconName)!.Data = Geometry.Parse(TileIcons.PathFor(iconKey));
+            this.FindControl<PathIcon>(iconName)!.Data = TileIcons.GeometryFor(iconKey);
 
-        this.FindControl<ContentControl>("TileEditorHost")!.Content = new TileLayoutEditor();
+        TileEditorHost.Content = new TileLayoutEditor();
 
         UpdateConnectionUi();
         LoadSensorUi();
@@ -57,7 +57,7 @@ public partial class SettingsWindow : Window
         // Set after InitializeComponent, not via XAML SelectedIndex="0" — that fires
         // SelectionChanged during EndInit, before the window's name scope is fully
         // populated, so FindControl calls inside the handler throw.
-        this.FindControl<ListBox>("NavList")!.SelectedIndex = 0;
+        NavList.SelectedIndex = 0;
 
         AppSettings.ConnectionChanged += OnConnectionChanged;
         Loc.Instance.LanguageChanged += OnLanguageChangedRefresh;
@@ -83,46 +83,34 @@ public partial class SettingsWindow : Window
 
     private void LoadAboutUi()
     {
-        this.FindControl<PathIcon>("AboutAppIcon")!.Data = Geometry.Parse(TileIcons.PathFor("cover"));
+        AboutAppIcon.Data = TileIcons.GeometryFor("cover");
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        this.FindControl<TextBlock>("AboutVersionText")!.Text = version is null ? Loc.Instance.Tr("About.DevelopmentBuild") : version.ToString(3);
+        AboutVersionText.Text = version is null ? Loc.Instance.Tr("About.DevelopmentBuild") : version.ToString(3);
 
-        this.FindControl<ToggleSwitch>("UpdateCheckToggle")!.IsChecked = AppSettings.UpdateCheckEnabled;
+        UpdateCheckToggle.IsChecked = AppSettings.UpdateCheckEnabled;
         RenderUpdateStatus();
     }
 
     private void OnAuthorLinkClicked(object? sender, RoutedEventArgs e)
     {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://riko.dev") { UseShellExecute = true });
-        }
-        catch { /* best effort — no default browser handler, nothing sensible to do */ }
+        ShellLauncher.TryOpen("https://riko.dev");
     }
 
     private void OnGitHubLinkClicked(object? sender, RoutedEventArgs e)
     {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/RikoDEV/ha-desktop") { UseShellExecute = true });
-        }
-        catch { /* best effort — no default browser handler, nothing sensible to do */ }
+        ShellLauncher.TryOpen("https://github.com/RikoDEV/ha-desktop");
     }
 
     private void OnViewReleaseClicked(object? sender, RoutedEventArgs e)
     {
         if (_latestReleaseUrl is null) return;
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_latestReleaseUrl) { UseShellExecute = true });
-        }
-        catch { /* best effort — no default browser handler, nothing sensible to do */ }
+        ShellLauncher.TryOpen(_latestReleaseUrl);
     }
 
     private async void OnUpdateCheckToggled(object? sender, RoutedEventArgs e)
     {
-        var isChecked = this.FindControl<ToggleSwitch>("UpdateCheckToggle")!.IsChecked == true;
+        var isChecked = UpdateCheckToggle.IsChecked == true;
         await AppSettings.SetUpdateCheckEnabledAsync(isChecked);
 
         if (isChecked)
@@ -162,7 +150,7 @@ public partial class SettingsWindow : Window
         var myToken = ++_appUpdateCheckToken;
         _appUpdateStatus = null;
         RenderUpdateStatus();
-        this.FindControl<Button>("CheckForUpdatesButton")!.IsEnabled = false;
+        CheckForUpdatesButton.IsEnabled = false;
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         var result = version is null
@@ -171,7 +159,7 @@ public partial class SettingsWindow : Window
 
         if (myToken != _appUpdateCheckToken) return; // superseded by a later check while we were awaiting
 
-        this.FindControl<Button>("CheckForUpdatesButton")!.IsEnabled = true;
+        CheckForUpdatesButton.IsEnabled = true;
         _appUpdateStatus = result.Status;
         _latestVersionLabel = result.LatestVersion;
         _latestReleaseUrl = result.ReleaseUrl;
@@ -182,8 +170,8 @@ public partial class SettingsWindow : Window
     /// switch, so switching languages doesn't re-hit GitHub's API just to relocalize the same status.</summary>
     private void RenderUpdateStatus()
     {
-        var statusText = this.FindControl<TextBlock>("UpdateStatusText")!;
-        var viewReleaseButton = this.FindControl<Button>("ViewReleaseButton")!;
+        var statusText = UpdateStatusText;
+        var viewReleaseButton = ViewReleaseButton;
 
         if (!AppSettings.UpdateCheckEnabled)
         {
@@ -204,7 +192,7 @@ public partial class SettingsWindow : Window
 
     private void OnNavSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var selectedIndex = this.FindControl<ListBox>("NavList")!.SelectedIndex;
+        var selectedIndex = NavList.SelectedIndex;
         for (var i = 0; i < PageNames.Length; i++)
             this.FindControl<StackPanel>(PageNames[i])!.IsVisible = i == selectedIndex;
     }
@@ -226,19 +214,26 @@ public partial class SettingsWindow : Window
         UpdateConnectionUi();
         LoadAboutUi();
         LoadNotificationsUi();
-        UpdateDeviceSlugPreview(this.FindControl<TextBox>("DeviceNameBox")!.Text?.Trim() is { Length: > 0 } name ? name : AppSettings.SensorPrefs.DeviceName);
+        UpdateDeviceSlugPreview(DeviceNameBox.Text?.Trim() is { Length: > 0 } name ? name : AppSettings.SensorPrefs.DeviceName);
         _ = RefreshUpdatesThenInstanceInfoAsync();
     });
 
     private int _updatesRefreshToken;
 
+    private static readonly HashSet<string> UpdateAttributes = new() { "friendly_name", "installed_version", "latest_version" };
+    private static readonly HashSet<string> NameAttribute = new() { "friendly_name" };
+
+    /// <summary>The entities of one domain, with just their names — for the weather/media player entity pickers.</summary>
+    private static Task<List<HaEntityState>> GetEntitiesOfDomainAsync(HaClient client, string domain) =>
+        client.GetStatesAsync(id => id.StartsWith(domain + ".", StringComparison.Ordinal), NameAttribute);
+
     private async Task RefreshUpdatesAsync()
     {
         var myToken = ++_updatesRefreshToken;
-        var card = this.FindControl<Border>("UpdatesCard")!;
-        var panel = this.FindControl<StackPanel>("UpdatesPanel")!;
+        var card = UpdatesCard;
+        var panel = UpdatesPanel;
 
-        if (AppSettings.Client is not { } client)
+        if (HaSession.Client is not { } client)
         {
             card.IsVisible = false;
             return;
@@ -247,10 +242,11 @@ public partial class SettingsWindow : Window
         List<HaEntityState> states;
         try
         {
-            states = await client.GetStatesAsync();
+            states = await client.GetStatesAsync(id => id.StartsWith("update.", StringComparison.Ordinal), UpdateAttributes);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             if (myToken == _updatesRefreshToken) card.IsVisible = false;
             return;
         }
@@ -259,7 +255,7 @@ public partial class SettingsWindow : Window
 
         // Match HA's own Updates view: only entities with a pending update (state "on"),
         // not the full list of update.* entities (most of which are just up to date).
-        var pending = states.Where(s => s.Domain == "update" && s.State == "on")
+        var pending = states.Where(s => s.State == "on")
             .OrderBy(HaEntityDisplay.LabelFor, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -291,10 +287,11 @@ public partial class SettingsWindow : Window
                 updateButton.Content = Loc.Instance.Tr("Updates.Updating");
                 try
                 {
-                    await AppSettings.Client!.CallServiceAsync("update", "install", entityId);
+                    await HaSession.Client!.CallServiceAsync("update", "install", entityId);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Log.Swallowed(ex);
                     // best effort — button re-enables below regardless so the user can retry
                 }
                 await RefreshUpdatesAsync();
@@ -310,10 +307,10 @@ public partial class SettingsWindow : Window
     private async Task RefreshInstanceInfoAsync()
     {
         var myToken = ++_instanceInfoRefreshToken;
-        var card = this.FindControl<Border>("InstanceInfoCard")!;
-        var panel = this.FindControl<StackPanel>("InstanceInfoPanel")!;
+        var card = InstanceInfoCard;
+        var panel = InstanceInfoPanel;
 
-        if (AppSettings.Client is not { } client)
+        if (HaSession.Client is not { } client)
         {
             card.IsVisible = false;
             return;
@@ -341,8 +338,9 @@ public partial class SettingsWindow : Window
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
             info = await client.GetInstanceInfoAsync(cts.Token);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return; // Core row (already shown) stands on its own; the rest just isn't available
         }
 
@@ -371,33 +369,28 @@ public partial class SettingsWindow : Window
     /// <summary>Shows either the "connected to X" summary or the sign-in form, depending on live connection state.</summary>
     private void UpdateConnectionUi()
     {
-        var isConnected = AppSettings.Client is not null && AppSettings.Credentials is not null;
+        var isConnected = HaSession.Client is not null && HaSession.Credentials is not null;
 
-        this.FindControl<StackPanel>("ConnectedPanel")!.IsVisible = isConnected;
-        this.FindControl<StackPanel>("SignInPanel")!.IsVisible = !isConnected;
-        this.FindControl<Button>("CancelSwitchButton")!.IsVisible = false;
+        ConnectedPanel.IsVisible = isConnected;
+        SignInPanel.IsVisible = !isConnected;
+        CancelSwitchButton.IsVisible = false;
 
         if (isConnected)
         {
-            this.FindControl<TextBlock>("ConnectedUrlText")!.Text = Loc.Instance.Tr("Connection.ConnectedTo", AppSettings.Credentials!.BaseUrl);
+            ConnectedUrlText.Text = Loc.Instance.Tr("Connection.ConnectedTo", HaSession.Credentials!.BaseUrl);
         }
         else
         {
-            this.FindControl<TextBox>("BaseUrlBox")!.Text = string.Empty;
-            this.FindControl<TextBlock>("StatusText")!.Text = string.Empty;
-            this.FindControl<Button>("LoginButton")!.IsEnabled = true;
+            BaseUrlBox.Text = string.Empty;
+            StatusText.Text = string.Empty;
+            LoginButton.IsEnabled = true;
         }
     }
 
     private async Task LoadAutostartStateAsync()
     {
         var isEnabled = await AutostartManager.Current.IsEnabledAsync();
-        this.FindControl<ToggleSwitch>("AutostartCheckBox")!.IsChecked = isEnabled;
-    }
-
-    private void InitializeComponent()
-    {
-        AvaloniaXamlLoader.Load(this);
+        AutostartCheckBox.IsChecked = isEnabled;
     }
 
     // Matches BaseUrlBox's watermark — if the user hits sign-in without typing a URL,
@@ -406,9 +399,9 @@ public partial class SettingsWindow : Window
 
     private async void OnLoginClicked(object? sender, RoutedEventArgs e)
     {
-        var status = this.FindControl<TextBlock>("StatusText")!;
-        var button = this.FindControl<Button>("LoginButton")!;
-        var baseUrl = this.FindControl<TextBox>("BaseUrlBox")!.Text?.Trim();
+        var status = StatusText;
+        var button = LoginButton;
+        var baseUrl = BaseUrlBox.Text?.Trim();
         if (string.IsNullOrWhiteSpace(baseUrl)) baseUrl = DefaultBaseUrl;
 
         button.IsEnabled = false;
@@ -421,7 +414,7 @@ public partial class SettingsWindow : Window
             var credentials = await HaOAuthLogin.LoginAsync(baseUrl, cts.Token);
 
             status.Text = Loc.Instance.Tr("Connection.Connecting");
-            await AppSettings.ConnectWithOAuthAsync(credentials);
+            await HaSession.ConnectWithOAuthAsync(credentials);
             // UpdateConnectionUi() runs via the ConnectionChanged event this raises.
         }
         catch (OperationCanceledException)
@@ -440,17 +433,17 @@ public partial class SettingsWindow : Window
 
     private void OnSwitchInstanceClicked(object? sender, RoutedEventArgs e)
     {
-        this.FindControl<StackPanel>("ConnectedPanel")!.IsVisible = false;
-        this.FindControl<StackPanel>("SignInPanel")!.IsVisible = true;
-        this.FindControl<Button>("CancelSwitchButton")!.IsVisible = true;
-        this.FindControl<TextBox>("BaseUrlBox")!.Text = AppSettings.Credentials?.BaseUrl ?? string.Empty;
+        ConnectedPanel.IsVisible = false;
+        SignInPanel.IsVisible = true;
+        CancelSwitchButton.IsVisible = true;
+        BaseUrlBox.Text = HaSession.Credentials?.BaseUrl ?? string.Empty;
     }
 
     private void OnCancelSwitchClicked(object? sender, RoutedEventArgs e) => UpdateConnectionUi();
 
     private async void OnSignOutClicked(object? sender, RoutedEventArgs e)
     {
-        await AppSettings.SignOutAsync();
+        await HaSession.SignOutAsync();
         // UpdateConnectionUi() runs via the ConnectionChanged event this raises.
     }
 
@@ -461,25 +454,25 @@ public partial class SettingsWindow : Window
         _suppressWeatherEvents = true;
 
         var prefs = AppSettings.WeatherPrefs;
-        this.FindControl<ToggleSwitch>("WeatherEnabledCheckBox")!.IsChecked = prefs.Enabled;
-        this.FindControl<ToggleSwitch>("WeatherBackgroundCheckBox")!.IsChecked = prefs.ShowConditionBackground;
-        this.FindControl<ToggleSwitch>("WeatherWindHumidityCheckBox")!.IsChecked = prefs.ShowWindAndHumidity;
-        this.FindControl<ToggleSwitch>("WeatherForecastCheckBox")!.IsChecked = prefs.ShowForecast;
+        WeatherEnabledCheckBox.IsChecked = prefs.Enabled;
+        WeatherBackgroundCheckBox.IsChecked = prefs.ShowConditionBackground;
+        WeatherWindHumidityCheckBox.IsChecked = prefs.ShowWindAndHumidity;
+        WeatherForecastCheckBox.IsChecked = prefs.ShowForecast;
 
-        var daysBox = this.FindControl<ComboBox>("WeatherForecastDaysBox")!;
+        var daysBox = WeatherForecastDaysBox;
         daysBox.SelectedItem = daysBox.Items
             .OfType<ComboBoxItem>()
             .FirstOrDefault(i => (string?)i.Tag == prefs.ForecastDays.ToString())
             ?? daysBox.Items.OfType<ComboBoxItem>().ElementAt(1); // "4 days" default
 
-        var combo = this.FindControl<ComboBox>("WeatherEntityBox")!;
+        var combo = WeatherEntityBox;
         combo.Items.Clear();
 
-        if (AppSettings.Client is { } client)
+        if (HaSession.Client is { } client)
         {
             try
             {
-                var weatherStates = (await client.GetStatesAsync()).Where(s => s.Domain == "weather");
+                var weatherStates = await GetEntitiesOfDomainAsync(client, "weather");
                 foreach (var state in weatherStates)
                 {
                     var item = new ComboBoxItem { Content = HaEntityDisplay.LabelFor(state), Tag = state.EntityId };
@@ -488,7 +481,7 @@ public partial class SettingsWindow : Window
                         combo.SelectedItem = item;
                 }
             }
-            catch { /* leave the list empty, user can retry by reopening Settings */ }
+            catch (Exception ex) { Log.Swallowed(ex); /* leave the list empty, user can retry by reopening Settings */ }
         }
 
         _suppressWeatherEvents = false;
@@ -520,13 +513,13 @@ public partial class SettingsWindow : Window
 
     private async Task SaveWeatherPrefsAsync()
     {
-        var enabled = this.FindControl<ToggleSwitch>("WeatherEnabledCheckBox")!.IsChecked == true;
-        var entityId = (this.FindControl<ComboBox>("WeatherEntityBox")!.SelectedItem as ComboBoxItem)?.Tag as string;
-        var showWindAndHumidity = this.FindControl<ToggleSwitch>("WeatherWindHumidityCheckBox")!.IsChecked == true;
-        var showForecast = this.FindControl<ToggleSwitch>("WeatherForecastCheckBox")!.IsChecked == true;
-        var forecastDaysTag = (this.FindControl<ComboBox>("WeatherForecastDaysBox")!.SelectedItem as ComboBoxItem)?.Tag as string;
+        var enabled = WeatherEnabledCheckBox.IsChecked == true;
+        var entityId = (WeatherEntityBox.SelectedItem as ComboBoxItem)?.Tag as string;
+        var showWindAndHumidity = WeatherWindHumidityCheckBox.IsChecked == true;
+        var showForecast = WeatherForecastCheckBox.IsChecked == true;
+        var forecastDaysTag = (WeatherForecastDaysBox.SelectedItem as ComboBoxItem)?.Tag as string;
         var forecastDays = int.TryParse(forecastDaysTag, out var days) ? days : 4;
-        var showConditionBackground = this.FindControl<ToggleSwitch>("WeatherBackgroundCheckBox")!.IsChecked == true;
+        var showConditionBackground = WeatherBackgroundCheckBox.IsChecked == true;
         await AppSettings.SetWeatherPreferencesAsync(new WeatherPreferences(enabled, entityId, showWindAndHumidity, showForecast, forecastDays, showConditionBackground));
     }
 
@@ -537,21 +530,21 @@ public partial class SettingsWindow : Window
         _suppressMediaPlayerEvents = true;
 
         var prefs = AppSettings.MediaPlayerPrefs;
-        this.FindControl<ToggleSwitch>("MediaPlayerEnabledCheckBox")!.IsChecked = prefs.Enabled;
-        this.FindControl<ToggleSwitch>("MediaPlayerBackgroundCheckBox")!.IsChecked = prefs.UseAlbumArtBackground;
+        MediaPlayerEnabledCheckBox.IsChecked = prefs.Enabled;
+        MediaPlayerBackgroundCheckBox.IsChecked = prefs.UseAlbumArtBackground;
 
-        var combo = this.FindControl<ComboBox>("MediaPlayerEntityBox")!;
+        var combo = MediaPlayerEntityBox;
         combo.Items.Clear();
 
         var autoItem = new ComboBoxItem { Content = Loc.Instance.Tr("Tiles.MediaAuto"), Tag = null };
         combo.Items.Add(autoItem);
         combo.SelectedItem = autoItem;
 
-        if (AppSettings.Client is { } client)
+        if (HaSession.Client is { } client)
         {
             try
             {
-                var mediaPlayerStates = (await client.GetStatesAsync()).Where(s => s.Domain == "media_player");
+                var mediaPlayerStates = await GetEntitiesOfDomainAsync(client, "media_player");
                 foreach (var state in mediaPlayerStates)
                 {
                     var item = new ComboBoxItem { Content = HaEntityDisplay.LabelFor(state), Tag = state.EntityId };
@@ -560,7 +553,7 @@ public partial class SettingsWindow : Window
                         combo.SelectedItem = item;
                 }
             }
-            catch { /* leave the list empty except Auto — user can retry by reopening Settings */ }
+            catch (Exception ex) { Log.Swallowed(ex); /* leave the list empty except Auto — user can retry by reopening Settings */ }
         }
 
         _suppressMediaPlayerEvents = false;
@@ -586,9 +579,9 @@ public partial class SettingsWindow : Window
 
     private async Task SaveMediaPlayerPrefsAsync()
     {
-        var enabled = this.FindControl<ToggleSwitch>("MediaPlayerEnabledCheckBox")!.IsChecked == true;
-        var entityId = (this.FindControl<ComboBox>("MediaPlayerEntityBox")!.SelectedItem as ComboBoxItem)?.Tag as string;
-        var useAlbumArtBackground = this.FindControl<ToggleSwitch>("MediaPlayerBackgroundCheckBox")!.IsChecked == true;
+        var enabled = MediaPlayerEnabledCheckBox.IsChecked == true;
+        var entityId = (MediaPlayerEntityBox.SelectedItem as ComboBoxItem)?.Tag as string;
+        var useAlbumArtBackground = MediaPlayerBackgroundCheckBox.IsChecked == true;
         await AppSettings.SetMediaPlayerPreferencesAsync(new MediaPlayerPreferences(enabled, entityId, useAlbumArtBackground));
     }
 
@@ -622,7 +615,7 @@ public partial class SettingsWindow : Window
     private void LoadLanguageUi()
     {
         _suppressLanguageEvents = true;
-        var box = this.FindControl<ComboBox>("LanguageBox")!;
+        var box = LanguageBox;
         box.SelectedItem = box.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == AppSettings.Language.ToString())
             ?? box.Items.OfType<ComboBoxItem>().First();
         _suppressLanguageEvents = false;
@@ -631,7 +624,7 @@ public partial class SettingsWindow : Window
     private async void OnLanguageChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_suppressLanguageEvents) return;
-        var tag = (this.FindControl<ComboBox>("LanguageBox")!.SelectedItem as ComboBoxItem)?.Tag as string;
+        var tag = (LanguageBox.SelectedItem as ComboBoxItem)?.Tag as string;
         if (tag is null || !Enum.TryParse<AppLanguage>(tag, out var language)) return;
 
         await AppSettings.SetLanguageAsync(language);
@@ -658,70 +651,69 @@ public partial class SettingsWindow : Window
     /// its very first sample by design (it has no prior value yet to diff against), so a second
     /// sample a moment later is needed before concluding it's genuinely unavailable.
     ///
-    /// Each CollectAsync is wrapped in Task.Run so its synchronous Win32/perf-counter work (disk
-    /// and GPU-Engine PerformanceCounter creation in particular) runs on a thread-pool thread
-    /// instead of resuming on this window's UI thread after CollectAsync's own first await — the
-    /// very first PerformanceCounter ever constructed in the process has to build perflib's
-    /// counter/help name tables from the registry, a one-time cost of hundreds of ms that would
-    /// otherwise freeze the Settings window for a moment the first time it's opened.
+    /// Each CollectAsync is wrapped in Task.Run so its synchronous Win32/perf-counter work runs on
+    /// a thread-pool thread instead of this window's UI thread — opening the GPU counter query (or
+    /// launching nvidia-smi) for the first time can take long enough to visibly stall the window.
     /// </summary>
     private async Task TestGpuAvailabilityAsync()
     {
         try
         {
-            var first = await Task.Run(() => SystemSensorCollector.Current.CollectAsync());
+            var gpuOnly = SensorPreferences.Default with { ShareGpu = true };
+            var first = await Task.Run(() => SystemSensorCollector.Current.CollectAsync(gpuOnly));
             _gpuAvailable = first.GpuPercent is not null;
 
             if (!_gpuAvailable)
             {
                 await Task.Delay(300);
-                var second = await Task.Run(() => SystemSensorCollector.Current.CollectAsync());
+                var second = await Task.Run(() => SystemSensorCollector.Current.CollectAsync(gpuOnly));
                 _gpuAvailable = second.GpuPercent is not null;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             _gpuAvailable = false; // best effort — if sampling itself throws, treat GPU sensing as unavailable
         }
 
         if (!_gpuAvailable && AppSettings.SensorPrefs.ShareGpu)
         {
-            this.FindControl<ToggleSwitch>("ShareGpuCheckBox")!.IsChecked = false;
+            ShareGpuCheckBox.IsChecked = false;
             await SaveSensorPrefsAsync();
         }
 
-        this.FindControl<TextBlock>("GpuUnavailableNote")!.IsVisible = !_gpuAvailable;
-        UpdateSensorRowsEnabled(this.FindControl<ToggleSwitch>("SensorSharingMasterCheckBox")!.IsChecked == true);
+        GpuUnavailableNote.IsVisible = !_gpuAvailable;
+        UpdateSensorRowsEnabled(SensorSharingMasterCheckBox.IsChecked == true);
     }
 
     private void LoadSensorUi()
     {
         var prefs = AppSettings.SensorPrefs;
-        this.FindControl<TextBox>("DeviceNameBox")!.Text = prefs.DeviceName;
-        this.FindControl<ToggleSwitch>("SensorSharingMasterCheckBox")!.IsChecked = prefs.Enabled;
-        this.FindControl<ToggleSwitch>("ShareCpuCheckBox")!.IsChecked = prefs.ShareCpu;
-        this.FindControl<ToggleSwitch>("ShareMemoryCheckBox")!.IsChecked = prefs.ShareMemory;
-        this.FindControl<ToggleSwitch>("ShareBatteryCheckBox")!.IsChecked = prefs.ShareBattery;
-        this.FindControl<ToggleSwitch>("ShareDiskCheckBox")!.IsChecked = prefs.ShareDisk;
-        this.FindControl<ToggleSwitch>("ShareStorageCheckBox")!.IsChecked = prefs.ShareStorage;
-        this.FindControl<ToggleSwitch>("ShareUptimeCheckBox")!.IsChecked = prefs.ShareUptime;
-        this.FindControl<ToggleSwitch>("ShareActiveWindowCheckBox")!.IsChecked = prefs.ShareActiveWindow;
-        this.FindControl<ToggleSwitch>("ShareGpuCheckBox")!.IsChecked = prefs.ShareGpu;
-        this.FindControl<ToggleSwitch>("ShareNetworkCheckBox")!.IsChecked = prefs.ShareNetwork;
-        this.FindControl<ToggleSwitch>("ShareDiskThroughputCheckBox")!.IsChecked = prefs.ShareDiskThroughput;
-        this.FindControl<ToggleSwitch>("ShareSessionLockCheckBox")!.IsChecked = prefs.ShareSessionLock;
-        this.FindControl<ToggleSwitch>("ShareVolumeCheckBox")!.IsChecked = prefs.ShareVolume;
-        this.FindControl<ToggleSwitch>("ShareActiveAudioOutputCheckBox")!.IsChecked = prefs.ShareActiveAudioOutput;
-        this.FindControl<ToggleSwitch>("ShareActiveAudioInputCheckBox")!.IsChecked = prefs.ShareActiveAudioInput;
-        this.FindControl<ToggleSwitch>("ShareAudioOutputInUseCheckBox")!.IsChecked = prefs.ShareAudioOutputInUse;
-        this.FindControl<ToggleSwitch>("ShareAudioInputInUseCheckBox")!.IsChecked = prefs.ShareAudioInputInUse;
-        this.FindControl<ToggleSwitch>("ShareActiveCameraCheckBox")!.IsChecked = prefs.ShareActiveCamera;
-        this.FindControl<ToggleSwitch>("ShareCameraInUseCheckBox")!.IsChecked = prefs.ShareCameraInUse;
-        this.FindControl<ToggleSwitch>("ShareSsidCheckBox")!.IsChecked = prefs.ShareSsid;
-        this.FindControl<ToggleSwitch>("ShareBssidCheckBox")!.IsChecked = prefs.ShareBssid;
-        this.FindControl<ToggleSwitch>("ShareConnectionTypeCheckBox")!.IsChecked = prefs.ShareConnectionType;
-        this.FindControl<ToggleSwitch>("ShareDisplayCountCheckBox")!.IsChecked = prefs.ShareDisplayCount;
-        this.FindControl<ToggleSwitch>("SharePrimaryDisplayCheckBox")!.IsChecked = prefs.SharePrimaryDisplay;
+        DeviceNameBox.Text = prefs.DeviceName;
+        SensorSharingMasterCheckBox.IsChecked = prefs.Enabled;
+        ShareCpuCheckBox.IsChecked = prefs.ShareCpu;
+        ShareMemoryCheckBox.IsChecked = prefs.ShareMemory;
+        ShareBatteryCheckBox.IsChecked = prefs.ShareBattery;
+        ShareDiskCheckBox.IsChecked = prefs.ShareDisk;
+        ShareStorageCheckBox.IsChecked = prefs.ShareStorage;
+        ShareUptimeCheckBox.IsChecked = prefs.ShareUptime;
+        ShareActiveWindowCheckBox.IsChecked = prefs.ShareActiveWindow;
+        ShareGpuCheckBox.IsChecked = prefs.ShareGpu;
+        ShareNetworkCheckBox.IsChecked = prefs.ShareNetwork;
+        ShareDiskThroughputCheckBox.IsChecked = prefs.ShareDiskThroughput;
+        ShareSessionLockCheckBox.IsChecked = prefs.ShareSessionLock;
+        ShareVolumeCheckBox.IsChecked = prefs.ShareVolume;
+        ShareActiveAudioOutputCheckBox.IsChecked = prefs.ShareActiveAudioOutput;
+        ShareActiveAudioInputCheckBox.IsChecked = prefs.ShareActiveAudioInput;
+        ShareAudioOutputInUseCheckBox.IsChecked = prefs.ShareAudioOutputInUse;
+        ShareAudioInputInUseCheckBox.IsChecked = prefs.ShareAudioInputInUse;
+        ShareActiveCameraCheckBox.IsChecked = prefs.ShareActiveCamera;
+        ShareCameraInUseCheckBox.IsChecked = prefs.ShareCameraInUse;
+        ShareSsidCheckBox.IsChecked = prefs.ShareSsid;
+        ShareBssidCheckBox.IsChecked = prefs.ShareBssid;
+        ShareConnectionTypeCheckBox.IsChecked = prefs.ShareConnectionType;
+        ShareDisplayCountCheckBox.IsChecked = prefs.ShareDisplayCount;
+        SharePrimaryDisplayCheckBox.IsChecked = prefs.SharePrimaryDisplay;
         UpdateDeviceSlugPreview(prefs.DeviceName);
         UpdateSensorRowsEnabled(prefs.Enabled);
     }
@@ -738,14 +730,14 @@ public partial class SettingsWindow : Window
 
     private async void OnSensorSharingMasterChanged(object? sender, RoutedEventArgs e)
     {
-        var enabled = this.FindControl<ToggleSwitch>("SensorSharingMasterCheckBox")!.IsChecked == true;
+        var enabled = SensorSharingMasterCheckBox.IsChecked == true;
         UpdateSensorRowsEnabled(enabled);
         await SaveSensorPrefsAsync();
     }
 
     private void UpdateDeviceSlugPreview(string deviceName)
     {
-        this.FindControl<TextBlock>("DeviceSlugPreview")!.Text = Loc.Instance.Tr("Sensors.DeviceSlugPreview", deviceName);
+        DeviceSlugPreview.Text = Loc.Instance.Tr("Sensors.DeviceSlugPreview", deviceName);
     }
 
     private async void OnDeviceNameLostFocus(object? sender, RoutedEventArgs e) => await SaveSensorPrefsAsync();
@@ -754,43 +746,43 @@ public partial class SettingsWindow : Window
 
     private async Task SaveSensorPrefsAsync()
     {
-        var deviceName = this.FindControl<TextBox>("DeviceNameBox")!.Text?.Trim();
+        var deviceName = DeviceNameBox.Text?.Trim();
         if (string.IsNullOrWhiteSpace(deviceName)) deviceName = "HA Desktop";
         UpdateDeviceSlugPreview(deviceName);
 
         var prefs = new SensorPreferences(
             deviceName,
-            this.FindControl<ToggleSwitch>("ShareCpuCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareMemoryCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareBatteryCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareDiskCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareUptimeCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareActiveWindowCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareGpuCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareNetworkCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("SensorSharingMasterCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareStorageCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareDiskThroughputCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareSessionLockCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareVolumeCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareActiveAudioOutputCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareActiveAudioInputCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareAudioOutputInUseCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareAudioInputInUseCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareActiveCameraCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareCameraInUseCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareSsidCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareBssidCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareConnectionTypeCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("ShareDisplayCountCheckBox")!.IsChecked == true,
-            this.FindControl<ToggleSwitch>("SharePrimaryDisplayCheckBox")!.IsChecked == true);
+            ShareCpuCheckBox.IsChecked == true,
+            ShareMemoryCheckBox.IsChecked == true,
+            ShareBatteryCheckBox.IsChecked == true,
+            ShareDiskCheckBox.IsChecked == true,
+            ShareUptimeCheckBox.IsChecked == true,
+            ShareActiveWindowCheckBox.IsChecked == true,
+            ShareGpuCheckBox.IsChecked == true,
+            ShareNetworkCheckBox.IsChecked == true,
+            SensorSharingMasterCheckBox.IsChecked == true,
+            ShareStorageCheckBox.IsChecked == true,
+            ShareDiskThroughputCheckBox.IsChecked == true,
+            ShareSessionLockCheckBox.IsChecked == true,
+            ShareVolumeCheckBox.IsChecked == true,
+            ShareActiveAudioOutputCheckBox.IsChecked == true,
+            ShareActiveAudioInputCheckBox.IsChecked == true,
+            ShareAudioOutputInUseCheckBox.IsChecked == true,
+            ShareAudioInputInUseCheckBox.IsChecked == true,
+            ShareActiveCameraCheckBox.IsChecked == true,
+            ShareCameraInUseCheckBox.IsChecked == true,
+            ShareSsidCheckBox.IsChecked == true,
+            ShareBssidCheckBox.IsChecked == true,
+            ShareConnectionTypeCheckBox.IsChecked == true,
+            ShareDisplayCountCheckBox.IsChecked == true,
+            SharePrimaryDisplayCheckBox.IsChecked == true);
 
         await AppSettings.SetSensorPreferencesAsync(prefs);
     }
 
     private async void OnAutostartChanged(object? sender, RoutedEventArgs e)
     {
-        var checkBox = this.FindControl<ToggleSwitch>("AutostartCheckBox")!;
+        var checkBox = AutostartCheckBox;
         var isChecked = checkBox.IsChecked == true;
 
         try
@@ -799,7 +791,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            var status = this.FindControl<TextBlock>("StatusText")!;
+            var status = StatusText;
             status.Text = Loc.Instance.Tr("Connection.StartupError", ex.Message);
             status.Foreground = Brushes.OrangeRed;
             checkBox.IsChecked = !isChecked; // revert the toggle since it didn't actually take effect
@@ -808,16 +800,16 @@ public partial class SettingsWindow : Window
 
     private async void OnNotificationsChanged(object? sender, RoutedEventArgs e)
     {
-        var isChecked = this.FindControl<ToggleSwitch>("NotificationsCheckBox")!.IsChecked == true;
+        var isChecked = NotificationsCheckBox.IsChecked == true;
         await AppSettings.SetNotificationsEnabledAsync(isChecked);
     }
 
     private void LoadNotificationsUi()
     {
-        this.FindControl<ToggleSwitch>("NotificationsCheckBox")!.IsChecked = AppSettings.NotificationsEnabled;
+        NotificationsCheckBox.IsChecked = AppSettings.NotificationsEnabled;
 
         var slug = ApproximateHaSlug(AppSettings.SensorPrefs.DeviceName);
-        this.FindControl<TextBlock>("NotifyServiceText")!.Text = Loc.Instance.Tr("Notifications.ServiceText", slug);
+        NotifyServiceText.Text = Loc.Instance.Tr("Notifications.ServiceText", slug);
     }
 
     private static string ApproximateHaSlug(string name)
@@ -835,6 +827,6 @@ public partial class SettingsWindow : Window
 
     private async void OnTestNotificationClicked(object? sender, RoutedEventArgs e)
     {
-        await AppSettings.SendTestNotificationAsync();
+        await NotificationRelay.SendTestNotificationAsync();
     }
 }

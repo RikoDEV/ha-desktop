@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
+using HaDesktop.Core.Diagnostics;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -8,6 +9,7 @@ namespace HaDesktop.Core.Sensors;
 internal static class CrossPlatformMetrics
 {
     private static (long Bytes, DateTime Timestamp)? _lastNetworkSample;
+    private static volatile bool _nvidiaSmiMissing;
 
     public static double? SampleDiskPercent()
     {
@@ -66,8 +68,9 @@ internal static class CrossPlatformMetrics
 
             return Math.Round(deltaBytes * 8.0 / 1_000_000.0 / elapsedSeconds, 2);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return null;
         }
     }
@@ -81,6 +84,10 @@ internal static class CrossPlatformMetrics
     /// </summary>
     public static async Task<double?> SampleNvidiaGpuPercentAsync()
     {
+        // An install can't gain nvidia-smi while this process is running in any way worth polling
+        // for: once launching it has failed, don't pay for a failed process start every 30 seconds.
+        if (_nvidiaSmiMissing) return null;
+
         try
         {
             var psi = new ProcessStartInfo("nvidia-smi")
@@ -103,7 +110,8 @@ internal static class CrossPlatformMetrics
         }
         catch (Win32Exception)
         {
-            return null; // nvidia-smi not installed / no NVIDIA GPU
+            _nvidiaSmiMissing = true; // nvidia-smi not installed / no NVIDIA GPU
+            return null;
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using HaDesktop.Core.Diagnostics;
 
 namespace HaDesktop.Core.Updates;
 
@@ -46,8 +47,9 @@ public static class GitHubUpdateChecker
                 ? new AppUpdateCheckResult(AppUpdateCheckStatus.UpdateAvailable, versionText, url)
                 : AppUpdateCheckResult.UpToDate;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             // Offline, rate-limited, GitHub down, malformed response, etc. — surfaced to the
             // caller as "couldn't check", never silently reported as a false "you're up to date".
             return AppUpdateCheckResult.Failed;

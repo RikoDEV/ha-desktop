@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Text.Json;
+using HaDesktop.Core.Diagnostics;
 using HaDesktop.Core.Ha;
 
 namespace HaDesktop.Core.Notifications;
@@ -94,7 +95,7 @@ public sealed class MacNativeNotifier : INativeNotifier
         {
             if (imagePath is not null)
             {
-                try { File.Delete(imagePath); } catch { /* best effort cleanup */ }
+                try { File.Delete(imagePath); } catch (Exception ex) { Log.Swallowed(ex); /* best effort cleanup */ }
             }
         }
     }

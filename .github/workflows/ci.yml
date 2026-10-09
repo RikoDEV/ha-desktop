@@ -21,3 +21,6 @@ jobs:
 
       - name: Build
         run: dotnet build HaDesktop.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test HaDesktop.sln -c Release --no-build

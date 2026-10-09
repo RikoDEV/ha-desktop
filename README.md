@@ -63,6 +63,7 @@ The solution is split into two projects:
 ```bash
 dotnet build HaDesktop.sln
 dotnet run --project src/HaDesktop.Tray
+dotnet test HaDesktop.sln
 ```
 
 On first run, click the tray icon and sign in with your Home Assistant URL — this opens your browser for HA's login page and completes the OAuth loopback flow automatically.
@@ -91,13 +92,17 @@ src/
     Storage/          # Credential store + local JSON preference stores
   HaDesktop.Tray/
     *.axaml(.cs)      # Tray flyout, tiles, and settings windows (Avalonia)
-    AppSettings.cs     # App-wide session/connection state and background timers
+    AppSettings.cs     # User preferences for the session
+    HaSession.cs       # The HA connection: credentials, client lifecycle, device registration
+    SensorPublisher.cs # Pushes the shared local sensors to HA
     Program.cs         # Entry point
+tests/
+  HaDesktop.Core.Tests/ # Unit tests for the Core library
 installer/
   windows/
     setup.iss          # Inno Setup script for the Windows installer
 .github/workflows/
-  ci.yml                # Build check on every push/PR
+  ci.yml                # Build + test check on every push/PR
   release.yml            # Builds installer + portable packages and publishes a GitHub Release on tag push
 ```
 

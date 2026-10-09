@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using Microsoft.Win32;
+using HaDesktop.Core.Diagnostics;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -32,8 +33,9 @@ internal static class WindowsPrivacyConsentStore
             using var nonPackaged = root.OpenSubKey("NonPackaged");
             return nonPackaged is not null && AnySubkeyInUse(nonPackaged);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return null;
         }
     }

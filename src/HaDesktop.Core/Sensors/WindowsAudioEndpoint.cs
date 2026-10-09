@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using HaDesktop.Core.Diagnostics;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -91,8 +92,9 @@ internal static class WindowsAudioEndpoint
                 PropVariantClear(ref value);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return null;
         }
         finally
@@ -131,8 +133,9 @@ internal static class WindowsAudioEndpoint
 
             return action(device);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return null;
         }
         finally

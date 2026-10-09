@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using HaDesktop.Core.Diagnostics;
 using HaDesktop.Core.Ha;
 
 namespace HaDesktop.Core.Notifications;
@@ -68,7 +69,7 @@ public sealed class LinuxNativeNotifier : INativeNotifier
         {
             if (iconPath is not null)
             {
-                try { File.Delete(iconPath); } catch { /* best effort cleanup */ }
+                try { File.Delete(iconPath); } catch (Exception ex) { Log.Swallowed(ex); /* best effort cleanup */ }
             }
         }
     }

@@ -53,6 +53,8 @@ jobs:
           -p:Version=$env:VERSION
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=true
+          -p:PublishReadyToRun=true
           -p:DebugType=None
           -o publish/win-x64
 

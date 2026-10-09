@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Layout;
 using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
@@ -38,8 +36,6 @@ public static class NotificationHistoryFlyout
             }
         }
 
-        var flyout = new Flyout { Content = content, Placement = PlacementMode.Bottom };
-        FlyoutBase.SetAttachedFlyout(anchor, flyout);
-        flyout.ShowAt(anchor);
+        DetailFlyoutControls.Show(anchor, content);
     }
 }

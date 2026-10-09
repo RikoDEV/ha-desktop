@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using HaDesktop.Core.Diagnostics;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -41,8 +42,9 @@ internal static class WindowsCameraEnumerator
             propBag.Read("FriendlyName", ref value, IntPtr.Zero);
             return value as string;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return null;
         }
         finally

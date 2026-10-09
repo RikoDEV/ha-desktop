@@ -1,77 +1,56 @@
-using System;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
 
 namespace HaDesktop.Tray;
 
 /// <summary>
 /// One Android-quick-settings-style tile: icon + label + on/off state.
-/// Left-click toggles via EntityId; right-click raises DetailRequested for
-/// callers that want to show extra controls (e.g. a brightness/color flyout
-/// for lights) without complicating this control with domain-specific UI.
+/// Left-click toggles the entity; right-click opens a detail popup for the domains that have one
+/// (brightness/color for a light, target humidity and mode for a humidifier).
 /// </summary>
-public partial class QuickToggleTile : UserControl
+public partial class QuickToggleTile : UserControl, IEntityTile
 {
-    public static readonly Avalonia.StyledProperty<string?> EntityIdProperty =
-        Avalonia.AvaloniaProperty.Register<QuickToggleTile, string?>(nameof(EntityId));
+    private TileConfig? _config;
+    private HaEntityState? _state;
 
-    public string? EntityId
-    {
-        get => GetValue(EntityIdProperty);
-        set => SetValue(EntityIdProperty, value);
-    }
-
-    public event EventHandler<bool>? Toggled;
-    public event EventHandler? DetailRequested;
-
-    // Persists across repeated SetContent calls (every incoming state_changed event re-runs it),
-    // unlike tintColor below which SetContent receives fresh each time — a custom color is a
-    // standing user choice for this tile, not something derived from the entity's current state.
+    // A standing user choice for this tile, unlike a light's own color, which is derived from the
+    // entity's current state on every update.
     private Color? _customColor;
 
     public QuickToggleTile()
     {
         InitializeComponent();
-        var toggle = this.FindControl<ToggleButton>("Toggle")!;
-        toggle.AddHandler(PointerPressedEvent, OnTogglePointerPressed, handledEventsToo: true);
+        Toggle.AddHandler(PointerPressedEvent, OnTogglePointerPressed, handledEventsToo: true);
     }
 
-    private void InitializeComponent()
+    public void Configure(TileConfig config, double cornerRadius)
     {
-        AvaloniaXamlLoader.Load(this);
+        _config = config;
+        _customColor = config.CustomColor is { } hex && Color.TryParse(hex, out var color) ? color : null;
+        Toggle.CornerRadius = new Avalonia.CornerRadius(cornerRadius);
+        this.SetTileSize(config.Size);
     }
 
-    /// <param name="iconKey">A key into <see cref="TileIcons.Paths"/>, not a display glyph.</param>
-    /// <param name="tintColor">A light's current rgb_color, if it's on and reports one — tints the tile to match instead of the generic accent color. Ignored in favor of <see cref="SetCustomColor"/> if the user picked one, since that's a deliberate override.</param>
-    public void SetContent(string iconKey, string label, bool isOn, Color? tintColor = null)
+    public void Update(HaEntityState state)
     {
-        this.FindControl<PathIcon>("IconIcon")!.Data = Geometry.Parse(TileIcons.PathFor(iconKey));
-        this.FindControl<TextBlock>("LabelText")!.Text = label;
+        _state = state;
 
-        var toggle = this.FindControl<ToggleButton>("Toggle")!;
-        toggle.IsChecked = isOn;
+        IconIcon.Data = TileIcons.GeometryFor(_config?.CustomIcon ?? HaEntityDisplay.IconFor(state));
+        LabelText.Text = _config?.CustomLabel ?? HaEntityDisplay.LabelFor(state);
+        Toggle.IsChecked = state.IsOn;
 
-        ApplyColor(_customColor ?? (isOn ? tintColor : null), alwaysOn: _customColor is not null);
-    }
-
-    /// <summary>Overrides this tile's color with a user pick from Settings, shown regardless of on/off state (unlike a light's own tintColor, which only ever tints the checked/on appearance).</summary>
-    public void SetCustomColor(Color? color)
-    {
-        _customColor = color;
-        ApplyColor(color, alwaysOn: color is not null);
+        // A light's current rgb_color tints the tile to match while it's on, instead of the generic
+        // accent color. A custom color is a deliberate override: it wins, and shows even when off.
+        ApplyColor(_customColor ?? HaEntityDisplay.LightColorFor(state), alwaysOn: _customColor is not null);
     }
 
     private void ApplyColor(Color? color, bool alwaysOn)
     {
-        var toggle = this.FindControl<ToggleButton>("Toggle")!;
-        var icon = this.FindControl<PathIcon>("IconIcon")!;
-        var labelText = this.FindControl<TextBlock>("LabelText")!;
-
         if (color is { } c)
         {
             // FluentAvaloniaUI's checked-state ToggleButton visual doesn't come from a
@@ -82,29 +61,29 @@ public partial class QuickToggleTile : UserControl
             // keys in this instance's own Resources overrides the DynamicResource lookup for
             // just this tile, without touching every other toggle in the app.
             var brush = new SolidColorBrush(c);
-            toggle.Resources["ToggleButtonBackgroundChecked"] = brush;
-            toggle.Resources["ToggleButtonBackgroundCheckedPointerOver"] = brush;
-            toggle.Resources["ToggleButtonBackgroundCheckedPressed"] = brush;
+            Toggle.Resources["ToggleButtonBackgroundChecked"] = brush;
+            Toggle.Resources["ToggleButtonBackgroundCheckedPointerOver"] = brush;
+            Toggle.Resources["ToggleButtonBackgroundCheckedPressed"] = brush;
             // The unchecked/off appearance IS a plain TemplateBinding to Background, though —
             // a custom color (unlike a light's live tint) is meant to show even when off.
-            if (alwaysOn) toggle.Background = brush;
-            else toggle.ClearValue(ToggleButton.BackgroundProperty);
+            if (alwaysOn) Toggle.Background = brush;
+            else Toggle.ClearValue(ToggleButton.BackgroundProperty);
 
             var foreground = IsColorDark(c) ? Brushes.White : Brushes.Black;
-            icon.Foreground = foreground;
-            labelText.Foreground = foreground;
+            IconIcon.Foreground = foreground;
+            LabelText.Foreground = foreground;
         }
         else
         {
-            toggle.Resources.Remove("ToggleButtonBackgroundChecked");
-            toggle.Resources.Remove("ToggleButtonBackgroundCheckedPointerOver");
-            toggle.Resources.Remove("ToggleButtonBackgroundCheckedPressed");
-            toggle.ClearValue(ToggleButton.BackgroundProperty);
+            Toggle.Resources.Remove("ToggleButtonBackgroundChecked");
+            Toggle.Resources.Remove("ToggleButtonBackgroundCheckedPointerOver");
+            Toggle.Resources.Remove("ToggleButtonBackgroundCheckedPressed");
+            Toggle.ClearValue(ToggleButton.BackgroundProperty);
 
             // Reverts to the theme's normal unchecked foreground instead of local-valuing it
             // to an actual null brush.
-            icon.ClearValue(PathIcon.ForegroundProperty);
-            labelText.ClearValue(TextBlock.ForegroundProperty);
+            IconIcon.ClearValue(PathIcon.ForegroundProperty);
+            LabelText.ClearValue(TextBlock.ForegroundProperty);
         }
     }
 
@@ -114,25 +93,17 @@ public partial class QuickToggleTile : UserControl
         return luminance < 0.55;
     }
 
-    public void SetCornerRadius(double radius) =>
-        this.FindControl<ToggleButton>("Toggle")!.CornerRadius = new Avalonia.CornerRadius(radius);
-
-    public void SetSize(TileSize size)
-    {
-        Width = TileDimensions.WidthFor(size);
-        Height = TileDimensions.HeightFor(size);
-    }
-
     private void OnClick(object? sender, RoutedEventArgs e)
     {
-        var isOn = this.FindControl<ToggleButton>("Toggle")!.IsChecked ?? false;
-        Toggled?.Invoke(this, isOn);
+        if (_state is not null) _ = HaActions.ToggleAsync(_state);
     }
 
     private void OnTogglePointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed) return;
         e.Handled = true; // don't let it also register as a toggle click
-        DetailRequested?.Invoke(this, EventArgs.Empty);
+
+        if (_state?.Domain == "light") LightDetailFlyout.Show(this, _state);
+        else if (_state?.Domain == "humidifier") HumidifierDetailFlyout.Show(this, _state);
     }
 }

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Text.Json.Nodes;
 using Avalonia.Media;
 using HaDesktop.Core.Ha;
 using HaDesktop.Tray.Localization;
@@ -52,57 +51,24 @@ public static class HaEntityDisplay
         };
     }
 
-    /// <summary>
-    /// A light's current color from its rgb_color attribute, if it's on and reports one.
-    /// HaClient serializes nested JSON (arrays/objects) as a raw JSON string rather than a
-    /// structured value, so this parses "[255,180,90]" rather than reading a typed array.
-    /// </summary>
+    /// <summary>A light's current color from its rgb_color attribute, if it's on and reports one.</summary>
     public static Color? LightColorFor(HaEntityState state)
     {
-        if (!state.IsOn || !state.Attributes.TryGetValue("rgb_color", out var raw) || raw is not string json)
+        if (!state.IsOn || !state.Attributes.TryGetValue("rgb_color", out var raw) || raw is not double[] { Length: >= 3 } rgb)
             return null;
 
-        try
-        {
-            var array = JsonNode.Parse(json)?.AsArray();
-            if (array is null || array.Count < 3) return null;
+        return Color.FromRgb(ToByte(rgb[0]), ToByte(rgb[1]), ToByte(rgb[2]));
 
-            var r = (byte)Math.Clamp(array[0]!.GetValue<double>(), 0, 255);
-            var g = (byte)Math.Clamp(array[1]!.GetValue<double>(), 0, 255);
-            var b = (byte)Math.Clamp(array[2]!.GetValue<double>(), 0, 255);
-            return Color.FromRgb(r, g, b);
-        }
-        catch
-        {
-            return null; // malformed/unexpected attribute shape — fall back to the theme's default tile color
-        }
+        static byte ToByte(double channel) => (byte)Math.Clamp(channel, 0, 255);
     }
 
     /// <summary>A numeric (double) attribute, or null if missing/non-numeric — HaClient parses JSON numbers straight into <see cref="double"/>, never a string.</summary>
     public static double? NumberAttribute(HaEntityState state, string key) =>
         state.Attributes.TryGetValue(key, out var v) && v is double d ? d : null;
 
-    /// <summary>
-    /// A string-array attribute (e.g. hvac_modes, preset_modes, available_modes). HaClient
-    /// serializes nested JSON as a raw JSON string rather than a structured value (see
-    /// <see cref="LightColorFor"/>), so this parses e.g. "[\"eco\",\"boost\"]" rather than
-    /// reading a typed array.
-    /// </summary>
-    public static string[] StringListAttribute(HaEntityState state, string key)
-    {
-        if (!state.Attributes.TryGetValue(key, out var raw) || raw is not string json)
-            return Array.Empty<string>();
-
-        try
-        {
-            var array = JsonNode.Parse(json)?.AsArray();
-            return array?.Select(n => n!.GetValue<string>()).ToArray() ?? Array.Empty<string>();
-        }
-        catch
-        {
-            return Array.Empty<string>();
-        }
-    }
+    /// <summary>A string-array attribute (e.g. hvac_modes, preset_modes, available_modes), or an empty array if missing or not a list of strings.</summary>
+    public static string[] StringListAttribute(HaEntityState state, string key) =>
+        state.Attributes.TryGetValue(key, out var raw) && raw is string[] list ? list : Array.Empty<string>();
 
     /// <summary>Title-cases an unrecognized snake/kebab-case value (e.g. a preset_mode or fan_mode with no dedicated translation) into display text, e.g. "away" -> "Away".</summary>
     public static string Prettify(string value)
@@ -183,12 +149,16 @@ public static class HaEntityDisplay
     }
 
     /// <summary>Green/yellow/red severity zones, matching Home Assistant's own gauge card defaults (green below 50%, yellow 50-80%, red above 80%).</summary>
-    public static Color GaugeColorFor(double fraction) => fraction switch
+    public static IBrush GaugeBrushFor(double fraction) => fraction switch
     {
-        >= 0.8 => Color.Parse("#DB4437"),
-        >= 0.5 => Color.Parse("#F4B400"),
-        _ => Color.Parse("#0F9D58"),
+        >= 0.8 => GaugeRedBrush,
+        >= 0.5 => GaugeYellowBrush,
+        _ => GaugeGreenBrush,
     };
+
+    private static readonly IBrush GaugeRedBrush = new SolidColorBrush(Color.Parse("#DB4437"));
+    private static readonly IBrush GaugeYellowBrush = new SolidColorBrush(Color.Parse("#F4B400"));
+    private static readonly IBrush GaugeGreenBrush = new SolidColorBrush(Color.Parse("#0F9D58"));
 
     /// <summary>Maps a weather.* entity's condition state (e.g. "partlycloudy") to a <see cref="TileIcons.Paths"/> key.</summary>
     public static string WeatherIconFor(HaEntityState state) => WeatherIconForCondition(state.State);

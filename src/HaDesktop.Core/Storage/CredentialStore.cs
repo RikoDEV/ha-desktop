@@ -15,7 +15,7 @@ public static class CredentialStore
         public SecretBackedCredentialStore(ISecretStore secrets) => _secrets = secrets;
 
         public Task SaveAsync(PersistedHaCredentials credentials) =>
-            _secrets.SaveAsync(Key, JsonSerializer.Serialize(credentials));
+            _secrets.SaveAsync(Key, JsonSerializer.Serialize(credentials, StorageJsonContext.Default.PersistedHaCredentials));
 
         public async Task<PersistedHaCredentials?> LoadAsync()
         {
@@ -24,7 +24,7 @@ public static class CredentialStore
 
             try
             {
-                return JsonSerializer.Deserialize<PersistedHaCredentials>(json);
+                return JsonSerializer.Deserialize(json, StorageJsonContext.Default.PersistedHaCredentials);
             }
             catch (JsonException)
             {

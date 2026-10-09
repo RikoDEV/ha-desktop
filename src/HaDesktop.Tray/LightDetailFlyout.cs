@@ -1,10 +1,9 @@
 using System;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Threading;
 using HaDesktop.Core.Ha;
 using HaDesktop.Tray.Localization;
 
@@ -13,7 +12,7 @@ namespace HaDesktop.Tray;
 /// <summary>Right-click detail popup for a light tile: brightness slider + a handful of preset color swatches.</summary>
 public static class LightDetailFlyout
 {
-    private static (string NameKey, byte R, byte G, byte B)[] Swatches => new (string, byte, byte, byte)[]
+    private static readonly (string NameKey, byte R, byte G, byte B)[] Swatches =
     {
         ("Light.ColorRed", 255, 0, 0),
         ("Light.ColorOrange", 255, 140, 0),
@@ -25,38 +24,29 @@ public static class LightDetailFlyout
         ("Light.ColorCoolWhite", 255, 255, 255),
     };
 
-    public static void Show(Control anchor, string entityId, HaEntityState state, HaClient client)
+    public static void Show(Control anchor, HaEntityState state)
     {
-        var initialPercent = state.Attributes.TryGetValue("brightness", out var b) && b is double brightness
+        var entityId = state.EntityId;
+
+        // A light that's off reports no brightness at all — show full, which is what switching it
+        // on from here with a brightness value would give anyway.
+        var initialPercent = HaEntityDisplay.NumberAttribute(state, "brightness") is { } brightness
             ? (int)Math.Round(brightness / 255.0 * 100)
             : 100;
 
         var brightnessLabel = new TextBlock { Text = Loc.Instance.Tr("Light.Brightness", initialPercent), FontSize = 12 };
         var slider = new Slider { Minimum = 1, Maximum = 100, Value = initialPercent, Width = 200 };
 
-        DispatcherTimer? debounce = null;
+        var brightnessDebouncer = new Debouncer();
         slider.ValueChanged += (_, _) =>
         {
             var percent = (int)slider.Value;
             brightnessLabel.Text = Loc.Instance.Tr("Light.Brightness", percent);
-
-            debounce?.Stop();
-            debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-            debounce.Tick += async (_, _) =>
-            {
-                debounce!.Stop();
-                try
-                {
-                    await client.CallServiceAsync("light", "turn_on", entityId,
-                        new JsonObject { ["brightness_pct"] = percent });
-                }
-                catch { /* best effort */ }
-            };
-            debounce.Start();
+            brightnessDebouncer.Schedule(() => HaActions.CallAsync("light", "turn_on", entityId, new JsonObject { ["brightness_pct"] = percent }));
         };
 
         var swatchPanel = new WrapPanel { Margin = new Avalonia.Thickness(0, 8, 0, 0), MaxWidth = 200 };
-        foreach (var (nameKey, r, g, bl) in Swatches)
+        foreach (var (nameKey, r, g, b) in Swatches)
         {
             var swatch = new Button
             {
@@ -64,20 +54,12 @@ public static class LightDetailFlyout
                 Height = 24,
                 Margin = new Avalonia.Thickness(3),
                 CornerRadius = new Avalonia.CornerRadius(12),
-                Background = new SolidColorBrush(Color.FromRgb(r, g, bl)),
+                Background = new SolidColorBrush(Color.FromRgb(r, g, b)),
                 BorderThickness = new Avalonia.Thickness(1),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(60, 0, 0, 0)),
             };
             ToolTip.SetTip(swatch, Loc.Instance.Tr(nameKey));
-            swatch.Click += async (_, _) =>
-            {
-                try
-                {
-                    await client.CallServiceAsync("light", "turn_on", entityId,
-                        new JsonObject { ["rgb_color"] = new JsonArray(r, g, bl) });
-                }
-                catch { /* best effort */ }
-            };
+            swatch.Click += (_, _) => _ = SetColorAsync(Color.FromRgb(r, g, b));
             swatchPanel.Children.Add(swatch);
         }
 
@@ -91,24 +73,11 @@ public static class LightDetailFlyout
             Margin = new Avalonia.Thickness(0, 4, 0, 0),
         };
 
-        DispatcherTimer? colorDebounce = null;
+        var colorDebouncer = new Debouncer();
         colorWheel.ColorChanged += (_, _) =>
         {
             var picked = colorWheel.Color;
-
-            colorDebounce?.Stop();
-            colorDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-            colorDebounce.Tick += async (_, _) =>
-            {
-                colorDebounce!.Stop();
-                try
-                {
-                    await client.CallServiceAsync("light", "turn_on", entityId,
-                        new JsonObject { ["rgb_color"] = new JsonArray(picked.R, picked.G, picked.B) });
-                }
-                catch { /* best effort */ }
-            };
-            colorDebounce.Start();
+            colorDebouncer.Schedule(() => SetColorAsync(picked));
         };
 
         var content = new StackPanel
@@ -122,8 +91,9 @@ public static class LightDetailFlyout
         content.Children.Add(colorWheelLabel);
         content.Children.Add(colorWheel);
 
-        var flyout = new Flyout { Content = content, Placement = PlacementMode.Bottom };
-        FlyoutBase.SetAttachedFlyout(anchor, flyout);
-        flyout.ShowAt(anchor);
+        DetailFlyoutControls.Show(anchor, content);
+
+        Task SetColorAsync(Color color) =>
+            HaActions.CallAsync("light", "turn_on", entityId, new JsonObject { ["rgb_color"] = new JsonArray(color.R, color.G, color.B) });
     }
 }

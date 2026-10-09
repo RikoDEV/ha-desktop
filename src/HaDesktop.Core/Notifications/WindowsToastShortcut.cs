@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using HaDesktop.Core.Diagnostics;
 
 namespace HaDesktop.Core.Notifications;
 
@@ -38,8 +39,9 @@ internal static class WindowsToastShortcut
         {
             CreateShortcutWithAppId(shortcutPath, exePath);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             // best effort — worst case the toast keeps showing a generic icon
         }
     }
@@ -91,8 +93,9 @@ internal static class WindowsToastShortcut
                 Marshal.ReleaseComObject(shellLinkObj);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return false;
         }
     }

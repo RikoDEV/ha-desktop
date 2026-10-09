@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
@@ -20,6 +19,14 @@ namespace HaDesktop.Tray;
 /// </summary>
 public partial class EntityPickerWindow : Window
 {
+    private static readonly HashSet<string> PickableDomains = new()
+    {
+        "light", "switch", "cover", "sensor", "camera", "climate", "fan", "humidifier", "lawn_mower",
+    };
+
+    // All a row shows is a name and an icon — no need to hold every attribute of every entity in HA.
+    private static readonly HashSet<string> RowAttributes = new() { "friendly_name", "device_class" };
+
     private readonly List<(string EntityId, string Domain, string Label, CheckBox CheckBox)> _rows = new();
 
     public EntityPickerWindow()
@@ -28,20 +35,15 @@ public partial class EntityPickerWindow : Window
         // Set after InitializeComponent, not via XAML SelectedIndex="0" — that fires
         // SelectionChanged during EndInit, before the window's name scope is fully
         // populated, so FindControl calls inside the handler throw.
-        this.FindControl<ComboBox>("DomainFilterBox")!.SelectedIndex = 0;
+        DomainFilterBox.SelectedIndex = 0;
         _ = LoadAsync();
-    }
-
-    private void InitializeComponent()
-    {
-        AvaloniaXamlLoader.Load(this);
     }
 
     private async Task LoadAsync()
     {
-        var status = this.FindControl<TextBlock>("StatusText")!;
-        var panel = this.FindControl<StackPanel>("RowsPanel")!;
-        var client = AppSettings.Client;
+        var status = StatusText;
+        var panel = RowsPanel;
+        var client = HaSession.Client;
 
         if (client is null)
         {
@@ -52,7 +54,7 @@ public partial class EntityPickerWindow : Window
         List<HaEntityState> states;
         try
         {
-            states = await client.GetStatesAsync();
+            states = await client.GetStatesAsync(IsPickable, RowAttributes);
         }
         catch (Exception ex)
         {
@@ -61,9 +63,7 @@ public partial class EntityPickerWindow : Window
         }
 
         var selected = new HashSet<string>(AppSettings.SelectedTiles.Select(t => t.EntityId));
-        var controllable = states
-            .Where(s => s.Domain is "light" or "switch" or "cover" or "sensor" or "camera" or "climate" or "fan" or "humidifier" or "lawn_mower")
-            .OrderBy(HaEntityDisplay.LabelFor, StringComparer.OrdinalIgnoreCase);
+        var controllable = states.OrderBy(HaEntityDisplay.LabelFor, StringComparer.OrdinalIgnoreCase);
 
         foreach (var state in controllable)
         {
@@ -76,7 +76,7 @@ public partial class EntityPickerWindow : Window
                     Spacing = 6,
                     Children =
                     {
-                        new PathIcon { Data = Geometry.Parse(TileIcons.PathFor(HaEntityDisplay.IconFor(state))), Width = 16, Height = 16 },
+                        new PathIcon { Data = TileIcons.GeometryFor(HaEntityDisplay.IconFor(state)), Width = 16, Height = 16 },
                         new TextBlock { Text = $"{label}  ({state.EntityId})" },
                     },
                 },
@@ -89,14 +89,20 @@ public partial class EntityPickerWindow : Window
         status.Text = Loc.Instance.Tr("Picker.EntityCount", _rows.Count);
     }
 
+    private static bool IsPickable(string entityId)
+    {
+        var dot = entityId.IndexOf('.');
+        return dot > 0 && PickableDomains.Contains(entityId[..dot]);
+    }
+
     private void OnSearchChanged(object? sender, TextChangedEventArgs e) => ApplyFilter();
 
     private void OnDomainFilterChanged(object? sender, SelectionChangedEventArgs e) => ApplyFilter();
 
     private void ApplyFilter()
     {
-        var query = this.FindControl<TextBox>("SearchBox")!.Text?.Trim() ?? string.Empty;
-        var domainFilter = (this.FindControl<ComboBox>("DomainFilterBox")!.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        var query = SearchBox.Text?.Trim() ?? string.Empty;
+        var domainFilter = (DomainFilterBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
 
         foreach (var (entityId, domain, label, checkBox) in _rows)
         {

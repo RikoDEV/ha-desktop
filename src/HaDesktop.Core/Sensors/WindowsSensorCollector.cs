@@ -1,80 +1,118 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using HaDesktop.Core.Diagnostics;
+using HaDesktop.Core.Storage;
 
 namespace HaDesktop.Core.Sensors;
 
 [SupportedOSPlatform("windows")]
 public sealed class WindowsSensorCollector : ISystemSensorCollector
 {
+    private static readonly TimeSpan WifiCacheLifetime = TimeSpan.FromMinutes(2);
+
+    // The settings window probes GPU availability through this same instance while the 30s sensor
+    // timer may be mid-collection; the delta-based samplers and PDH queries below aren't reentrant.
+    private readonly SemaphoreSlim _collectLock = new(1, 1);
+
     private (long Idle, long Kernel, long User)? _lastCpuSample;
-    private List<PerformanceCounter>? _gpuEngineCounters;
-    private DateTime _gpuCountersRefreshedAt = DateTime.MinValue;
-    private PerformanceCounter? _diskIdleTimeCounter;
-    private bool _diskCounterPrimed;
-    private PerformanceCounter? _diskReadBytesCounter;
-    private PerformanceCounter? _diskWriteBytesCounter;
-    private bool _diskThroughputCounterPrimed;
+    private PdhQuery? _gpuQuery;
+    private bool _gpuQueryUnavailable;
+    private readonly Dictionary<string, double> _gpuLoadByEngineType = new();
+    private PdhQuery? _diskQuery;
+    private bool _diskQueryUnavailable;
+    private (string? Ssid, string? Bssid, DateTime FetchedAt)? _wifiCache;
 
-    public async Task<SensorSnapshot> CollectAsync(CancellationToken ct = default)
+    public async Task<SensorSnapshot> CollectAsync(SensorPreferences prefs, CancellationToken ct = default)
     {
-        var (volumePercent, isMuted) = WindowsAudioEndpoint.GetState();
-        var (ssid, bssid) = await WindowsWifiInfo.GetWifiInfoAsync(ct);
-        return new(
-            SampleCpuPercent(),
-            SampleMemoryPercent(),
-            SampleBatteryPercent(),
-            SampleDiskActivePercent(),
-            CrossPlatformMetrics.SampleUptimeHours(),
-            SampleActiveWindowTitle(),
-            await SampleGpuPercentAsync(),
-            CrossPlatformMetrics.SampleNetworkThroughputMbps(),
-            CrossPlatformMetrics.SampleDiskPercent(),
-            SampleDiskThroughputMbps(),
-            SampleIsSessionLocked(),
-            volumePercent,
-            isMuted,
-            WindowsAudioEndpoint.GetOutputDeviceName(),
-            WindowsAudioEndpoint.GetInputDeviceName(),
-            WindowsAudioEndpoint.IsOutputActive(),
-            WindowsPrivacyConsentStore.IsMicrophoneInUse(),
-            WindowsCameraEnumerator.GetFirstCameraName(),
-            WindowsPrivacyConsentStore.IsCameraInUse(),
-            ssid,
-            bssid,
-            WindowsWifiInfo.GetConnectionType(ssid),
-            WindowsDisplayInfo.GetDisplayCount(),
-            WindowsDisplayInfo.GetPrimaryDisplayDescription());
-    }
-
-    /// <summary>Combined read+write throughput of the system drive, in Mbit/s — same "Bytes/sec" counter family as the GPU/disk-activity ones, kept alive across polls for the same reason.</summary>
-    private double? SampleDiskThroughputMbps()
-    {
+        await _collectLock.WaitAsync(ct);
         try
         {
-            _diskReadBytesCounter ??= new PerformanceCounter("PhysicalDisk", "Disk Read Bytes/sec", "_Total", readOnly: true);
-            _diskWriteBytesCounter ??= new PerformanceCounter("PhysicalDisk", "Disk Write Bytes/sec", "_Total", readOnly: true);
+            var (volumePercent, isMuted) = prefs.ShareVolume ? WindowsAudioEndpoint.GetState() : default;
+            var needsWifi = prefs.ShareSsid || prefs.ShareBssid || prefs.ShareConnectionType;
+            var (ssid, bssid) = needsWifi ? await GetWifiInfoAsync(ct) : default;
+            var diskSampled = (prefs.ShareDisk || prefs.ShareDiskThroughput) && CollectDiskCounters();
 
-            var readBytesPerSec = _diskReadBytesCounter.NextValue();
-            var writeBytesPerSec = _diskWriteBytesCounter.NextValue();
-
-            if (!_diskThroughputCounterPrimed)
-            {
-                _diskThroughputCounterPrimed = true;
-                return null; // priming sample, not a real reading
-            }
-
-            return Math.Round((readBytesPerSec + writeBytesPerSec) * 8.0 / 1_000_000.0, 2);
+            return new(
+                prefs.ShareCpu ? SampleCpuPercent() : null,
+                prefs.ShareMemory ? SampleMemoryPercent() : null,
+                prefs.ShareBattery ? SampleBatteryPercent() : null,
+                prefs.ShareDisk && diskSampled ? DiskActivePercent() : null,
+                prefs.ShareUptime ? CrossPlatformMetrics.SampleUptimeHours() : null,
+                prefs.ShareActiveWindow ? SampleActiveWindowTitle() : null,
+                prefs.ShareGpu ? await SampleGpuPercentAsync() : null,
+                prefs.ShareNetwork ? CrossPlatformMetrics.SampleNetworkThroughputMbps() : null,
+                prefs.ShareStorage ? CrossPlatformMetrics.SampleDiskPercent() : null,
+                prefs.ShareDiskThroughput && diskSampled ? DiskThroughputMbps() : null,
+                prefs.ShareSessionLock ? SampleIsSessionLocked() : null,
+                volumePercent,
+                isMuted,
+                prefs.ShareActiveAudioOutput ? WindowsAudioEndpoint.GetOutputDeviceName() : null,
+                prefs.ShareActiveAudioInput ? WindowsAudioEndpoint.GetInputDeviceName() : null,
+                prefs.ShareAudioOutputInUse ? WindowsAudioEndpoint.IsOutputActive() : null,
+                prefs.ShareAudioInputInUse ? WindowsPrivacyConsentStore.IsMicrophoneInUse() : null,
+                prefs.ShareActiveCamera ? WindowsCameraEnumerator.GetFirstCameraName() : null,
+                prefs.ShareCameraInUse ? WindowsPrivacyConsentStore.IsCameraInUse() : null,
+                ssid,
+                bssid,
+                prefs.ShareConnectionType ? WindowsWifiInfo.GetConnectionType(ssid) : null,
+                prefs.ShareDisplayCount ? WindowsDisplayInfo.GetDisplayCount() : null,
+                prefs.SharePrimaryDisplay ? WindowsDisplayInfo.GetPrimaryDisplayDescription() : null);
         }
-        catch (InvalidOperationException)
+        finally
         {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
+            _collectLock.Release();
         }
     }
+
+    /// <summary>Which network this machine is on changes rarely, and finding out means spawning netsh — so the answer is reused for a couple of minutes rather than re-run on every 30s poll.</summary>
+    private async Task<(string? Ssid, string? Bssid)> GetWifiInfoAsync(CancellationToken ct)
+    {
+        if (_wifiCache is { } cached && DateTime.UtcNow - cached.FetchedAt < WifiCacheLifetime)
+            return (cached.Ssid, cached.Bssid);
+
+        var (ssid, bssid) = await WindowsWifiInfo.GetWifiInfoAsync(ct);
+        _wifiCache = (ssid, bssid, DateTime.UtcNow);
+        return (ssid, bssid);
+    }
+
+    /// <summary>
+    /// Samples the system drive's activity and throughput counters together. False while there's
+    /// nothing to read yet: the counters are rates, so the first sample after the query is opened
+    /// only primes them. The query stays open for the process lifetime for that same reason.
+    /// </summary>
+    private bool CollectDiskCounters()
+    {
+        if (_diskQueryUnavailable) return false;
+
+        _diskQuery ??= PdhQuery.TryOpen(
+            @"\PhysicalDisk(_Total)\% Idle Time",
+            @"\PhysicalDisk(_Total)\Disk Read Bytes/sec",
+            @"\PhysicalDisk(_Total)\Disk Write Bytes/sec");
+        if (_diskQuery is null)
+        {
+            _diskQueryUnavailable = true; // "PhysicalDisk" counters not present on this machine
+            return false;
+        }
+
+        return _diskQuery.Collect();
+    }
+
+    /// <summary>
+    /// Matches Task Manager's "Disk" percentage — how busy the disk's I/O is right now — not how
+    /// full it is. <see cref="CrossPlatformMetrics.SampleDiskPercent"/> (used capacity / total
+    /// capacity) reported a number that barely moves and doesn't correspond to what "Disk Usage"
+    /// looks like anywhere else in Windows, which is what a user comparing against Task Manager
+    /// actually expects. "% Idle Time" is the standard PhysicalDisk counter for this (Resource
+    /// Monitor derives its own Disk Active Time the same way) — active% is just its complement.
+    /// </summary>
+    private double? DiskActivePercent() =>
+        _diskQuery!.GetValue(0) is { } idlePercent ? Math.Clamp(100 - idlePercent, 0, 100) : null;
+
+    /// <summary>Combined read+write throughput of the system drive, in Mbit/s.</summary>
+    private double? DiskThroughputMbps() =>
+        _diskQuery!.GetValue(1) is { } readBytesPerSec && _diskQuery.GetValue(2) is { } writeBytesPerSec
+            ? Math.Round((readBytesPerSec + writeBytesPerSec) * 8.0 / 1_000_000.0, 2)
+            : null;
 
     /// <summary>
     /// The lock screen runs on a separate desktop that the interactive session can't switch to
@@ -90,8 +128,9 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
             CloseDesktop(desktop);
             return false;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return null;
         }
     }
@@ -104,43 +143,6 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
     [DllImport("user32.dll")]
     private static extern bool CloseDesktop(IntPtr hDesktop);
 
-    /// <summary>
-    /// Matches Task Manager's "Disk" percentage — how busy the disk's I/O is right now — not how
-    /// full it is. <see cref="CrossPlatformMetrics.SampleDiskPercent"/> (used capacity / total
-    /// capacity) reported a number that barely moves and doesn't correspond to what "Disk Usage"
-    /// looks like anywhere else in Windows, which is what a user comparing against Task Manager
-    /// actually expects. "% Idle Time" is the standard PhysicalDisk counter for this (Resource
-    /// Monitor derives its own Disk Active Time the same way) — active% is just its complement.
-    /// The counter instance is kept alive for the process lifetime, not recreated per call, for the
-    /// same reason the GPU counters are: a freshly constructed counter's first NextValue() has no
-    /// prior sample to diff against and would otherwise look like 100% (fully idle -> 0% active)
-    /// forever if reset every poll.
-    /// </summary>
-    private double? SampleDiskActivePercent()
-    {
-        try
-        {
-            _diskIdleTimeCounter ??= new PerformanceCounter("PhysicalDisk", "% Idle Time", "_Total", readOnly: true);
-            var idlePercent = _diskIdleTimeCounter.NextValue();
-
-            if (!_diskCounterPrimed)
-            {
-                _diskCounterPrimed = true;
-                return null; // this first read is the priming sample, not a real one
-            }
-
-            return Math.Clamp(100 - idlePercent, 0, 100);
-        }
-        catch (InvalidOperationException)
-        {
-            return null; // "PhysicalDisk" category/instance not present
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
     /// <summary>NVIDIA via nvidia-smi first (works identically across OSes); otherwise falls back to the
     /// "GPU Engine" performance counter category, which Windows populates for any vendor's driver (AMD, Intel).</summary>
     private async Task<double?> SampleGpuPercentAsync()
@@ -151,56 +153,36 @@ public sealed class WindowsSensorCollector : ISystemSensorCollector
 
     private double? SampleGpuPercentViaPerformanceCounters()
     {
-        try
+        if (_gpuQueryUnavailable) return null;
+
+        // One wildcard counter covers every engine of every GPU process, and PDH picks up engines
+        // that appear or go away on its own at each collection. Every engine instance is tracked,
+        // not just "engtype_3D" — some AMD driver builds report the bulk of GPU activity under
+        // Compute/VideoDecode/Copy instead of 3D depending on workload, so a 3D-only filter could
+        // sit at 0% even under load.
+        _gpuQuery ??= PdhQuery.TryOpen(@"\GPU Engine(*)\Utilization Percentage");
+        if (_gpuQuery is null)
         {
-            // GPU Engine instances appear/disappear as processes start/stop using the GPU, so the
-            // instance list is periodically refreshed — but much less often than callers actually
-            // poll (AppSettings' sensor push runs every 30s). A freshly (re)created counter's first
-            // NextValue() has no prior sample to diff against and returns null by design, so a
-            // refresh window shorter than the polling interval — this used to be 10s — meant every
-            // single poll recreated the counters and got null forever, never actually reporting GPU
-            // usage. Keeping the same counter instances alive across many polls, and only refreshing
-            // the list occasionally to catch new/removed GPU processes, is what lets NextValue() see
-            // a real elapsed-time delta on the (very common) second-and-later call.
-            if (_gpuEngineCounters is null || DateTime.UtcNow - _gpuCountersRefreshedAt > TimeSpan.FromMinutes(5))
-            {
-                foreach (var counter in _gpuEngineCounters ?? Enumerable.Empty<PerformanceCounter>())
-                    counter.Dispose();
-
-                // Every engine instance is tracked, not just "engtype_3D" — some AMD driver
-                // builds report the bulk of GPU activity under Compute/VideoDecode/Copy instead
-                // of 3D depending on workload, so a 3D-only filter could sit at 0% even under load.
-                var category = new PerformanceCounterCategory("GPU Engine");
-                _gpuEngineCounters = category.GetInstanceNames()
-                    .Select(name => new PerformanceCounter("GPU Engine", "Utilization Percentage", name, readOnly: true))
-                    .ToList();
-                _gpuCountersRefreshedAt = DateTime.UtcNow;
-
-                // A freshly created counter's first NextValue() is always 0 (no prior sample to diff against).
-                foreach (var counter in _gpuEngineCounters)
-                    counter.NextValue();
-                return null;
-            }
-
-            if (_gpuEngineCounters.Count == 0) return null;
-
-            // Task Manager's single "GPU %" figure is the busiest engine type at a given
-            // moment (3D, Compute, Video Decode/Encode, Copy) — summing every engine type
-            // together would double-count a workload that touches several of them at once.
-            var byEngineType = _gpuEngineCounters
-                .GroupBy(c => GetEngineType(c.InstanceName))
-                .Select(g => g.Sum(c => c.NextValue()));
-
-            return Math.Clamp(byEngineType.DefaultIfEmpty(0).Max(), 0, 100);
-        }
-        catch (InvalidOperationException)
-        {
-            return null; // "GPU Engine" category not present (no driver exposing it)
-        }
-        catch (UnauthorizedAccessException)
-        {
+            _gpuQueryUnavailable = true; // "GPU Engine" category not present (no driver exposing it)
             return null;
         }
+
+        if (!_gpuQuery.Collect()) return null; // first sample only primes the rate counters
+
+        // Task Manager's single "GPU %" figure is the busiest engine type at a given
+        // moment (3D, Compute, Video Decode/Encode, Copy) — summing every engine type
+        // together would double-count a workload that touches several of them at once.
+        _gpuLoadByEngineType.Clear();
+        var read = _gpuQuery.ReadInstances(0, (instanceName, value) =>
+        {
+            var engineType = GetEngineType(instanceName);
+            _gpuLoadByEngineType[engineType] = _gpuLoadByEngineType.GetValueOrDefault(engineType) + value;
+        });
+        if (!read) return null;
+
+        var busiest = 0.0;
+        foreach (var load in _gpuLoadByEngineType.Values) busiest = Math.Max(busiest, load);
+        return Math.Clamp(busiest, 0, 100);
     }
 
     private static string GetEngineType(string instanceName)

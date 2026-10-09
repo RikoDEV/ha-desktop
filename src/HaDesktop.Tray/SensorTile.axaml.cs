@@ -1,45 +1,31 @@
 using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
-using Avalonia.Media;
+using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
 
 namespace HaDesktop.Tray;
 
 /// <summary>Read-only display tile for a sensor entity (temperature, humidity, etc.) — no toggle, since there's nothing to actuate.</summary>
-public partial class SensorTile : UserControl
+public partial class SensorTile : UserControl, IEntityTile
 {
-    public string? EntityId { get; set; }
+    private TileConfig? _config;
 
     public SensorTile()
     {
         InitializeComponent();
     }
 
-    private void InitializeComponent()
+    public void Configure(TileConfig config, double cornerRadius)
     {
-        AvaloniaXamlLoader.Load(this);
+        _config = config;
+        RootBorder.CornerRadius = new Avalonia.CornerRadius(cornerRadius);
+        if (TileDimensions.CustomBrushFor(config) is { } brush) RootBorder.Background = brush;
+        this.SetTileSize(config.Size);
     }
 
-    /// <param name="iconKey">A key into <see cref="TileIcons.Paths"/>, not a display glyph.</param>
-    public void SetContent(string iconKey, string label, string value)
+    public void Update(HaEntityState state)
     {
-        this.FindControl<PathIcon>("IconIcon")!.Data = Geometry.Parse(TileIcons.PathFor(iconKey));
-        this.FindControl<TextBlock>("ValueText")!.Text = value;
-        this.FindControl<TextBlock>("LabelText")!.Text = label;
-    }
-
-    public void SetCornerRadius(double radius) =>
-        this.FindControl<Border>("RootBorder")!.CornerRadius = new Avalonia.CornerRadius(radius);
-
-    /// <summary>Overrides the tile's background with a user-picked color; a fresh tile instance already shows the theme default otherwise (see FlyoutWindow — tiles are rebuilt from scratch on every refresh), so this only ever needs to act when a color is actually set.</summary>
-    public void SetCustomColor(Color? color)
-    {
-        if (color is { } c) this.FindControl<Border>("RootBorder")!.Background = new SolidColorBrush(c);
-    }
-
-    public void SetSize(TileSize size)
-    {
-        Width = TileDimensions.WidthFor(size);
-        Height = TileDimensions.HeightFor(size);
+        IconIcon.Data = TileIcons.GeometryFor(_config?.CustomIcon ?? HaEntityDisplay.IconFor(state));
+        ValueText.Text = HaEntityDisplay.ValueFor(state);
+        LabelText.Text = _config?.CustomLabel ?? HaEntityDisplay.LabelFor(state);
     }
 }

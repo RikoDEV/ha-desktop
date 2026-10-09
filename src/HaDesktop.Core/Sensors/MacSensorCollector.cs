@@ -2,21 +2,22 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
+using HaDesktop.Core.Storage;
 
 namespace HaDesktop.Core.Sensors;
 
 [SupportedOSPlatform("macos")]
 public sealed partial class MacSensorCollector : ISystemSensorCollector
 {
-    public async Task<SensorSnapshot> CollectAsync(CancellationToken ct = default) => new(
-        await SampleCpuPercentAsync(ct),
-        await SampleMemoryPercentAsync(ct),
-        await SampleBatteryPercentAsync(ct),
-        CrossPlatformMetrics.SampleDiskPercent(),
-        CrossPlatformMetrics.SampleUptimeHours(),
+    public async Task<SensorSnapshot> CollectAsync(SensorPreferences prefs, CancellationToken ct = default) => new(
+        prefs.ShareCpu ? await SampleCpuPercentAsync(ct) : null,
+        prefs.ShareMemory ? await SampleMemoryPercentAsync(ct) : null,
+        prefs.ShareBattery ? await SampleBatteryPercentAsync(ct) : null,
+        prefs.ShareDisk ? CrossPlatformMetrics.SampleDiskPercent() : null,
+        prefs.ShareUptime ? CrossPlatformMetrics.SampleUptimeHours() : null,
         ActiveWindowTitle: null, // needs Accessibility permission + AppleScript/NSWorkspace — not wired up yet
-        GpuPercent: await CrossPlatformMetrics.SampleNvidiaGpuPercentAsync(), // effectively always null on Macs (no NVIDIA GPUs, and no AMD sysfs/perf-counter equivalent on macOS)
-        NetworkMbps: CrossPlatformMetrics.SampleNetworkThroughputMbps());
+        GpuPercent: prefs.ShareGpu ? await CrossPlatformMetrics.SampleNvidiaGpuPercentAsync() : null, // effectively always null on Macs (no NVIDIA GPUs, and no AMD sysfs/perf-counter equivalent on macOS)
+        NetworkMbps: prefs.ShareNetwork ? CrossPlatformMetrics.SampleNetworkThroughputMbps() : null);
 
     private static async Task<double?> SampleCpuPercentAsync(CancellationToken ct)
     {

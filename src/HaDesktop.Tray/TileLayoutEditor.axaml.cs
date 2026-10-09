@@ -8,7 +8,6 @@ using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
-using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
 using HaDesktop.Core.Ha;
@@ -71,7 +70,10 @@ public partial class TileLayoutEditor : UserControl
     private static readonly IBrush AddTileBorderBrush = new SolidColorBrush(Color.Parse("#66808080"));
     private static readonly IBrush AddTileBackgroundBrush = new SolidColorBrush(Color.Parse("#11808080"));
 
-    private readonly Dictionary<string, HaEntityState> _statesByEntityId = new();
+    // Every tile in the editor is a tracked entity, so the session's own cache already has what's
+    // needed to label them — re-pointed at the current client's on each refresh.
+    private IReadOnlyDictionary<string, HaEntityState> _statesByEntityId = NoStates;
+    private static readonly IReadOnlyDictionary<string, HaEntityState> NoStates = new Dictionary<string, HaEntityState>();
     private readonly Dictionary<string, Border> _cardsByKey = new();
     private readonly Dictionary<string, TileSize> _cardSizeByKey = new();
     private List<TileConfig> _currentConfigs = new();
@@ -118,8 +120,6 @@ public partial class TileLayoutEditor : UserControl
         _ = RefreshAsync();
     }
 
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
-
     private void OnConnectionChanged() => Dispatcher.UIThread.Post(() => _ = RefreshAsync());
 
     /// <summary>
@@ -155,30 +155,18 @@ public partial class TileLayoutEditor : UserControl
     /// </summary>
     private bool IsDragActive => _draggingCard is not null || _quadrantGhost is not null;
 
-    private int _refreshToken;
-
-    private async Task RefreshAsync()
+    private Task RefreshAsync()
     {
-        // AppSettings.ConnectionChanged fires for any settings change anywhere in the app — not
-        // just tile edits — so overlapping calls here are routine, not exceptional: a drop's own
-        // direct refresh call can easily still be awaiting HA's state fetch when an unrelated
-        // change (or another drop) posts a second one. An older call resuming after a newer one
-        // already rebuilt the canvas would otherwise re-add/duplicate cards.
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    private void Refresh()
+    {
         if (IsDragActive) return;
-        var myToken = ++_refreshToken;
 
-        _statesByEntityId.Clear();
-        if (AppSettings.Client is { } client)
-        {
-            try
-            {
-                foreach (var state in await client.GetStatesAsync())
-                    _statesByEntityId[state.EntityId] = state;
-            }
-            catch { /* editor still usable — labels fall back to raw entity ids below */ }
-        }
-
-        if (myToken != _refreshToken || IsDragActive) return; // superseded, or a drag started while we were awaiting
+        // Labels fall back to raw entity ids below for anything the cache doesn't have (yet).
+        _statesByEntityId = HaSession.Client?.States ?? NoStates;
 
         _currentConfigs = TileLayoutCompactor.Compact(AppSettings.SelectedTiles, _liveColumnCount);
         _mergeHighlightKey = null;
@@ -188,7 +176,7 @@ public partial class TileLayoutEditor : UserControl
         // Wide/Group spans leave behind.
         var withAddTile = TileLayoutCompactor.Compact(_currentConfigs.Append(new TileConfig(AddTileKey)).ToList(), _liveColumnCount);
 
-        var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+        var canvas = LayoutCanvas;
         var stillPresent = new HashSet<string>();
         var maxRow = 0;
         var maxCol = _liveColumnCount;
@@ -332,7 +320,7 @@ public partial class TileLayoutEditor : UserControl
             Spacing = 4,
             Margin = new Thickness(4, 4, 4, 26),
         };
-        stack.Children.Add(new PathIcon { Data = Geometry.Parse(TileIcons.PathFor(iconKey)), Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Center });
+        stack.Children.Add(new PathIcon { Data = TileIcons.GeometryFor(iconKey), Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Center });
         stack.Children.Add(new TextBlock { Text = label, FontSize = 11, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 96, HorizontalAlignment = HorizontalAlignment.Center });
 
         var panel = new Panel();
@@ -340,7 +328,7 @@ public partial class TileLayoutEditor : UserControl
 
         var resizeGrip = new Border
         {
-            Child = new PathIcon { Data = Geometry.Parse(TileIcons.PathFor("resize-handle")), Width = 12, Height = 12, Opacity = 0.7 },
+            Child = new PathIcon { Data = TileIcons.GeometryFor("resize-handle"), Width = 12, Height = 12, Opacity = 0.7 },
             Width = 24, Height = 20,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
             Margin = new Thickness(0, 0, 26, 2),
@@ -353,7 +341,7 @@ public partial class TileLayoutEditor : UserControl
 
         var editButton = new Button
         {
-            Content = new PathIcon { Data = Geometry.Parse(TileIcons.PathFor("pencil")), Width = 11, Height = 11 },
+            Content = new PathIcon { Data = TileIcons.GeometryFor("pencil"), Width = 11, Height = 11 },
             Width = 20, Height = 20, Padding = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
             Margin = new Thickness(0, 0, 2, 2),
@@ -417,7 +405,7 @@ public partial class TileLayoutEditor : UserControl
             Spacing = 2,
             Margin = new Thickness(2),
         };
-        stack.Children.Add(new PathIcon { Data = Geometry.Parse(TileIcons.PathFor(iconKey)), Width = 14, Height = 14, HorizontalAlignment = HorizontalAlignment.Center });
+        stack.Children.Add(new PathIcon { Data = TileIcons.GeometryFor(iconKey), Width = 14, Height = 14, HorizontalAlignment = HorizontalAlignment.Center });
         stack.Children.Add(new TextBlock { Text = label, FontSize = 8, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 64, HorizontalAlignment = HorizontalAlignment.Center });
 
         var quadrant = new Border
@@ -441,7 +429,7 @@ public partial class TileLayoutEditor : UserControl
 
             _draggingCard = root;
             _draggingConfig = config;
-            var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+            var canvas = LayoutCanvas;
             _dragStartPointerPos = e.GetPosition(canvas);
             _dragStartLeft = Canvas.GetLeft(root);
             _dragStartTop = Canvas.GetTop(root);
@@ -460,7 +448,7 @@ public partial class TileLayoutEditor : UserControl
         {
             if (!ReferenceEquals(_draggingCard, root) || _draggingConfig is null) return;
 
-            var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+            var canvas = LayoutCanvas;
             var pos = e.GetPosition(canvas);
             var delta = pos - _dragStartPointerPos;
             Canvas.SetLeft(root, _dragStartLeft + delta.X);
@@ -503,7 +491,7 @@ public partial class TileLayoutEditor : UserControl
 
             _resizingCard = root;
             _resizingConfig = config;
-            var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+            var canvas = LayoutCanvas;
             _resizeStartPointerPos = e.GetPosition(canvas);
             _resizeStartColSpan = TileLayoutCompactor.ColSpanFor(config.Size);
             _resizeStartRowSpan = TileLayoutCompactor.RowSpanFor(config.Size);
@@ -548,7 +536,7 @@ public partial class TileLayoutEditor : UserControl
 
     private (int ColSpan, int RowSpan) ComputeResizedSpan(PointerEventArgs e, Border root)
     {
-        var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+        var canvas = LayoutCanvas;
         var delta = e.GetPosition(canvas) - _resizeStartPointerPos;
         var colSpan = Math.Clamp(_resizeStartColSpan + (int)Math.Round(delta.X / CellWidth), 1, 2);
         var rowSpan = Math.Clamp(_resizeStartRowSpan + (int)Math.Round(delta.Y / CellHeight), 1, 2);
@@ -763,7 +751,7 @@ public partial class TileLayoutEditor : UserControl
 
             _quadrantDragGroupId = groupId;
             _quadrantDragEntityId = entityId;
-            var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+            var canvas = LayoutCanvas;
             _quadrantDragStartPointerPos = e.GetPosition(canvas);
             var origin = quadrant.TranslatePoint(new Point(0, 0), canvas) ?? new Point(0, 0);
             _quadrantDragOriginLeft = origin.X;
@@ -776,7 +764,7 @@ public partial class TileLayoutEditor : UserControl
         {
             if (_quadrantDragEntityId != entityId) return;
 
-            var canvas = this.FindControl<Canvas>("LayoutCanvas")!;
+            var canvas = LayoutCanvas;
             var pos = e.GetPosition(canvas);
             var delta = pos - _quadrantDragStartPointerPos;
 
@@ -834,7 +822,7 @@ public partial class TileLayoutEditor : UserControl
         var label = state is not null ? HaEntityDisplay.LabelFor(state) : entityId;
 
         var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Spacing = 4 };
-        stack.Children.Add(new PathIcon { Data = Geometry.Parse(TileIcons.PathFor(iconKey)), Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Center });
+        stack.Children.Add(new PathIcon { Data = TileIcons.GeometryFor(iconKey), Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Center });
         stack.Children.Add(new TextBlock { Text = label, FontSize = 11, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 84, HorizontalAlignment = HorizontalAlignment.Center });
 
         return new Border

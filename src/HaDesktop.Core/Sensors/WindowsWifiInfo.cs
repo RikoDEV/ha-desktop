@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
+using HaDesktop.Core.Diagnostics;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -30,8 +31,9 @@ internal static partial class WindowsWifiInfo
             var bssid = BssidRegex().Match(output) is { Success: true } bssidMatch ? bssidMatch.Groups[1].Value.Trim() : null;
             return (ssid, bssid);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return (null, null);
         }
     }

@@ -24,7 +24,7 @@ public static class TileEditFlyout
 
     public static void Show(Control anchor, string? currentLabel, string? currentIconKey, string defaultLabel, string defaultIconKey, bool isSensor, bool currentIsGauge, string? currentColor, Func<string?, string?, bool, string?, Task> onSave)
     {
-        var labelBox = new TextBox { Watermark = defaultLabel, Text = currentLabel, Width = 232 };
+        var labelBox = new TextBox { PlaceholderText = defaultLabel, Text = currentLabel, Width = 232 };
         var gaugeCheckBox = new CheckBox { Content = Loc.Instance.Tr("TileEdit.DisplayAsGauge"), IsChecked = currentIsGauge, IsVisible = isSensor };
 
         string? selectedColor = currentColor;
@@ -76,11 +76,11 @@ public static class TileEditFlyout
         var iconButtons = new List<(string Key, Button Button)>();
 
         var iconRow = new WrapPanel { Margin = new Avalonia.Thickness(0, 4, 0, 4), MaxWidth = 232 };
-        foreach (var (key, path) in TileIcons.Paths)
+        foreach (var key in TileIcons.Paths.Keys)
         {
             var iconButton = new Button
             {
-                Content = new PathIcon { Data = Geometry.Parse(path), Width = 18, Height = 18 },
+                Content = new PathIcon { Data = TileIcons.GeometryFor(key), Width = 18, Height = 18 },
                 Width = 36,
                 Height = 36,
                 Margin = new Avalonia.Thickness(2),
@@ -149,8 +149,6 @@ public static class TileEditFlyout
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
 
-        flyout = new Flyout { Content = scroller, Placement = PlacementMode.Bottom };
-        FlyoutBase.SetAttachedFlyout(anchor, flyout);
-        flyout.ShowAt(anchor);
+        flyout = DetailFlyoutControls.Show(anchor, scroller);
     }
 }

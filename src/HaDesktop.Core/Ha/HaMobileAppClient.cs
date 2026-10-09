@@ -67,7 +67,7 @@ public sealed class HaMobileAppClient
     {
         var array = new JsonArray();
         foreach (var sensor in sensors)
-            array.Add(sensor.ToUpdatePayload());
+            array.Add((JsonNode)sensor.ToUpdatePayload());
         return PostWebhookAsync(settings, webhookId, "update_sensor_states", array, ct);
     }
 

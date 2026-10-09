@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -35,11 +36,22 @@ public partial class App : Application
             _flyoutWindow.OpenSettingsRequested += OpenSettings;
             SetupTrayIcon(desktop);
 
-            _ = AppSettings.LoadLocalPreferencesAsync();
-            _ = AppSettings.TryRestoreAsync();
+            _ = StartSessionAsync();
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Preferences first, then the connection: connecting needs to know which entities to track and
+    /// whether this machine already has a mobile_app registration — restoring the session before
+    /// those were loaded could register a duplicate device.
+    /// </summary>
+    private static async Task StartSessionAsync()
+    {
+        await AppSettings.LoadLocalPreferencesAsync();
+        await HaSession.TryRestoreAsync();
+        MemoryTrimmer.TrimSoon();
     }
 
     private void SetupTrayIcon(IClassicDesktopStyleApplicationLifetime desktop)
@@ -88,7 +100,7 @@ public partial class App : Application
     /// </summary>
     private static Bitmap RenderMenuIcon(string iconKey, int size = 16)
     {
-        var geometry = Geometry.Parse(TileIcons.PathFor(iconKey));
+        var geometry = TileIcons.GeometryFor(iconKey);
         var bitmap = new RenderTargetBitmap(new PixelSize(size, size), new Vector(96, 96));
         using (var ctx = bitmap.CreateDrawingContext())
         using (ctx.PushTransform(Matrix.CreateScale(size / 24.0, size / 24.0)))
@@ -103,6 +115,7 @@ public partial class App : Application
         if (_settingsWindow is null || !_settingsWindow.IsVisible)
         {
             _settingsWindow = new SettingsWindow();
+            _settingsWindow.Closed += (_, _) => MemoryTrimmer.TrimSoon();
             _settingsWindow.Show();
         }
         _settingsWindow.Activate();

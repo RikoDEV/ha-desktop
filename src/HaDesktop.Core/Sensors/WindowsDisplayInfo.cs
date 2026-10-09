@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using HaDesktop.Core.Diagnostics;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -19,8 +20,9 @@ internal static class WindowsDisplayInfo
             var count = GetSystemMetrics(SM_CMONITORS);
             return count > 0 ? count : null;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return null;
         }
     }
@@ -44,8 +46,9 @@ internal static class WindowsDisplayInfo
 
             return null;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Swallowed(ex);
             return null;
         }
     }

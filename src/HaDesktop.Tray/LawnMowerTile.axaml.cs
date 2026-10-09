@@ -1,16 +1,13 @@
 using System;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
-using Avalonia.Media;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
-using HaDesktop.Tray.Localization;
 
 namespace HaDesktop.Tray;
 
 /// <summary>Start/pause/dock is a clearer interaction for a mower than a single on/off toggle — mirrors CoverTile's open/stop/close.</summary>
-public partial class LawnMowerTile : UserControl
+public partial class LawnMowerTile : UserControl, IEntityTile
 {
     // lawn_mower.LawnMowerEntityFeature bit flags (Home Assistant core).
     [Flags]
@@ -21,31 +18,33 @@ public partial class LawnMowerTile : UserControl
         Dock = 4,
     }
 
-    public string? EntityId { get; set; }
-
-    public event EventHandler? StartRequested;
-    public event EventHandler? PauseRequested;
-    public event EventHandler? DockRequested;
+    private TileConfig? _config;
+    private string? _entityId;
 
     public LawnMowerTile()
     {
         InitializeComponent();
-        this.FindControl<PathIcon>("StartIcon")!.Data = Geometry.Parse(TileIcons.PathFor("chevron-up"));
-        this.FindControl<PathIcon>("PauseIcon")!.Data = Geometry.Parse(TileIcons.PathFor("pause"));
-        this.FindControl<PathIcon>("DockIcon")!.Data = Geometry.Parse(TileIcons.PathFor("home"));
+        StartIcon.Data = TileIcons.GeometryFor("chevron-up");
+        PauseIcon.Data = TileIcons.GeometryFor("pause");
+        DockIcon.Data = TileIcons.GeometryFor("home");
     }
 
-    private void InitializeComponent()
+    public void Configure(TileConfig config, double cornerRadius)
     {
-        AvaloniaXamlLoader.Load(this);
+        _config = config;
+        RootBorder.CornerRadius = new Avalonia.CornerRadius(cornerRadius);
+        if (TileDimensions.CustomBrushFor(config) is { } brush) RootBorder.Background = brush;
+        this.SetTileSize(config.Size);
     }
 
     /// <summary>Sets icon, label, and current status, and disables actions the entity doesn't currently support per its state/feature bitmask.</summary>
-    public void SetContent(HaEntityState state, string label)
+    public void Update(HaEntityState state)
     {
-        this.FindControl<PathIcon>("MowerIcon")!.Data = Geometry.Parse(TileIcons.PathFor(HaEntityDisplay.IconFor(state)));
-        this.FindControl<TextBlock>("LabelText")!.Text = label;
-        this.FindControl<TextBlock>("StatusText")!.Text = HaEntityDisplay.LawnMowerStatusFor(state);
+        _entityId = state.EntityId;
+
+        MowerIcon.Data = TileIcons.GeometryFor(HaEntityDisplay.IconFor(state));
+        LabelText.Text = _config?.CustomLabel ?? HaEntityDisplay.LabelFor(state);
+        StatusText.Text = HaEntityDisplay.LawnMowerStatusFor(state);
 
         var features = state.Attributes.TryGetValue("supported_features", out var sf) && sf is not null
             ? (Feature)Convert.ToInt64(sf)
@@ -54,27 +53,17 @@ public partial class LawnMowerTile : UserControl
         var isMowing = state.State is "mowing" or "returning";
         var isDocked = state.State == "docked";
 
-        this.FindControl<Button>("StartButton")!.IsEnabled = features.HasFlag(Feature.StartMowing) && !isMowing;
-        this.FindControl<Button>("PauseButton")!.IsEnabled = features.HasFlag(Feature.Pause) && isMowing;
-        this.FindControl<Button>("DockButton")!.IsEnabled = features.HasFlag(Feature.Dock) && !isDocked;
+        StartButton.IsEnabled = features.HasFlag(Feature.StartMowing) && !isMowing;
+        PauseButton.IsEnabled = features.HasFlag(Feature.Pause) && isMowing;
+        DockButton.IsEnabled = features.HasFlag(Feature.Dock) && !isDocked;
     }
 
-    public void SetCornerRadius(double radius) =>
-        this.FindControl<Border>("RootBorder")!.CornerRadius = new Avalonia.CornerRadius(radius);
+    private void OnStartClicked(object? sender, RoutedEventArgs e) => Call("start_mowing");
+    private void OnPauseClicked(object? sender, RoutedEventArgs e) => Call("pause");
+    private void OnDockClicked(object? sender, RoutedEventArgs e) => Call("dock");
 
-    /// <summary>Overrides the tile's background with a user-picked color; a fresh tile instance already shows the theme default otherwise (see FlyoutWindow — tiles are rebuilt from scratch on every refresh), so this only ever needs to act when a color is actually set.</summary>
-    public void SetCustomColor(Color? color)
+    private void Call(string service)
     {
-        if (color is { } c) this.FindControl<Border>("RootBorder")!.Background = new SolidColorBrush(c);
+        if (_entityId is not null) _ = HaActions.CallAsync("lawn_mower", service, _entityId);
     }
-
-    public void SetSize(TileSize size)
-    {
-        Width = TileDimensions.WidthFor(size);
-        Height = TileDimensions.HeightFor(size);
-    }
-
-    private void OnStartClicked(object? sender, RoutedEventArgs e) => StartRequested?.Invoke(this, EventArgs.Empty);
-    private void OnPauseClicked(object? sender, RoutedEventArgs e) => PauseRequested?.Invoke(this, EventArgs.Empty);
-    private void OnDockClicked(object? sender, RoutedEventArgs e) => DockRequested?.Invoke(this, EventArgs.Empty);
 }

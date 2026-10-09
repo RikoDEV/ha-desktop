@@ -1,7 +1,7 @@
 using System;
-using System.ComponentModel;
+using System.Collections.Generic;
+using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Data;
 using Avalonia.Markup.Xaml;
 
 namespace HaDesktop.Tray.Localization;
@@ -18,38 +18,65 @@ public sealed class TrExtension : MarkupExtension
         var node = new LocNode(Key);
 
         // Loc.Instance's LanguageChanged event would otherwise keep every node (and its
-        // target control) alive forever — unsubscribe once the owning control leaves the
-        // visual tree (window closed, tile rebuilt) so this doesn't leak.
+        // target control) alive forever — stop listening while the owning control is out of the
+        // visual tree (window closed, tile dropped), and catch up if it's ever put back.
         if (serviceProvider.GetService(typeof(IProvideValueTarget)) is IProvideValueTarget { TargetObject: Control control })
         {
-            control.DetachedFromVisualTree += OnDetached;
-            void OnDetached(object? s, Avalonia.VisualTreeAttachmentEventArgs e)
-            {
-                control.DetachedFromVisualTree -= OnDetached;
-                node.Dispose();
-            }
+            control.AttachedToVisualTree += (_, _) => node.Listen();
+            control.DetachedFromVisualTree += (_, _) => node.StopListening();
         }
 
-        return new Binding(nameof(LocNode.Value)) { Source = node, Mode = BindingMode.OneWay };
+        // An observable rather than a Binding to a property path: that kind of binding finds its
+        // property by reflection, which trimming breaks (the text silently comes out empty).
+        return node.ToBinding();
     }
 
-    /// <summary>Plain observable property, not an indexer — avoids relying on Avalonia's binding engine supporting the WPF-style "Item[]" indexer-refresh convention.</summary>
-    private sealed class LocNode : INotifyPropertyChanged, IDisposable
+    private sealed class LocNode : IObservable<string>
     {
         private readonly string _key;
+        private readonly List<IObserver<string>> _observers = new();
+        private bool _listening;
 
         public LocNode(string key)
         {
             _key = key;
-            Loc.Instance.LanguageChanged += OnLanguageChanged;
+            Listen();
         }
 
-        public string Value => Loc.Instance.Tr(_key);
+        public void Listen()
+        {
+            if (_listening) return;
+            _listening = true;
+            Loc.Instance.LanguageChanged += Publish;
+            Publish(); // the language may have changed while this wasn't listening
+        }
 
-        public event PropertyChangedEventHandler? PropertyChanged;
+        public void StopListening()
+        {
+            if (!_listening) return;
+            _listening = false;
+            Loc.Instance.LanguageChanged -= Publish;
+        }
 
-        private void OnLanguageChanged() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Value)));
+        public IDisposable Subscribe(IObserver<string> observer)
+        {
+            _observers.Add(observer);
+            observer.OnNext(Loc.Instance.Tr(_key));
+            return new Subscription(this, observer);
+        }
 
-        public void Dispose() => Loc.Instance.LanguageChanged -= OnLanguageChanged;
+        private void Publish()
+        {
+            if (_observers.Count == 0) return;
+
+            var text = Loc.Instance.Tr(_key);
+            foreach (var observer in _observers.ToArray())
+                observer.OnNext(text);
+        }
+
+        private sealed class Subscription(LocNode node, IObserver<string> observer) : IDisposable
+        {
+            public void Dispose() => node._observers.Remove(observer);
+        }
     }
 }

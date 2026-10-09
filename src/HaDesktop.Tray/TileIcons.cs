@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Avalonia.Media;
 
 namespace HaDesktop.Tray;
 
@@ -60,5 +61,19 @@ public static class TileIcons
         ["minus"] = "M19,13H5V11H19V13Z",
     };
 
-    public static string PathFor(string? key) => key is not null && Paths.TryGetValue(key, out var path) ? path : Paths["circle"];
+    private static readonly Dictionary<string, Geometry> Geometries = new();
+
+    /// <summary>
+    /// The parsed geometry for an icon key ("circle" for an unknown one). Parsed once and shared by
+    /// every PathIcon showing that icon — tiles set their icon again on each state change, and
+    /// re-parsing the path text every time was pure waste. UI thread only.
+    /// </summary>
+    public static Geometry GeometryFor(string? key)
+    {
+        if (key is null || !Paths.ContainsKey(key)) key = "circle";
+
+        if (!Geometries.TryGetValue(key, out var geometry))
+            Geometries[key] = geometry = Geometry.Parse(Paths[key]);
+        return geometry;
+    }
 }

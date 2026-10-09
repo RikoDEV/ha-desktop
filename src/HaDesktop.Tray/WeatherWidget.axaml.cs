@@ -6,8 +6,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
-using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using HaDesktop.Core.Diagnostics;
 using HaDesktop.Core.Ha;
 using HaDesktop.Core.Storage;
 
@@ -22,22 +22,17 @@ public partial class WeatherWidget : UserControl
     public WeatherWidget()
     {
         InitializeComponent();
-        this.FindControl<PathIcon>("WindIcon")!.Data = Geometry.Parse(TileIcons.PathFor("fan"));
-        this.FindControl<PathIcon>("HumidityIcon")!.Data = Geometry.Parse(TileIcons.PathFor("humidity"));
+        WindIcon.Data = TileIcons.GeometryFor("fan");
+        HumidityIcon.Data = TileIcons.GeometryFor("humidity");
     }
 
-    private void InitializeComponent()
+    public void SetContent(HaEntityState state, WeatherPreferences prefs)
     {
-        AvaloniaXamlLoader.Load(this);
-    }
+        ConditionIcon.Data = TileIcons.GeometryFor(HaEntityDisplay.WeatherIconFor(state));
+        TempText.Text = HaEntityDisplay.WeatherTemperatureFor(state);
+        ConditionText.Text = HaEntityDisplay.PrettifyCondition(state.State);
 
-    public void SetContent(HaEntityState state, HaClient client, WeatherPreferences prefs)
-    {
-        this.FindControl<PathIcon>("ConditionIcon")!.Data = Geometry.Parse(TileIcons.PathFor(HaEntityDisplay.WeatherIconFor(state)));
-        this.FindControl<TextBlock>("TempText")!.Text = HaEntityDisplay.WeatherTemperatureFor(state);
-        this.FindControl<TextBlock>("ConditionText")!.Text = HaEntityDisplay.PrettifyCondition(state.State);
-
-        var overlay = this.FindControl<Border>("ConditionBackgroundOverlay")!;
+        var overlay = ConditionBackgroundOverlay;
         if (prefs.ShowConditionBackground)
         {
             var (top, bottom) = HaEntityDisplay.WeatherGradientFor(state.State);
@@ -56,15 +51,15 @@ public partial class WeatherWidget : UserControl
         _useWhiteForeground = prefs.ShowConditionBackground;
         ApplyForeground(_useWhiteForeground ? Brushes.White : null);
 
-        var windHumidityPanel = this.FindControl<StackPanel>("WindHumidityPanel")!;
+        var windHumidityPanel = WindHumidityPanel;
         if (prefs.ShowWindAndHumidity)
         {
             var windSpeed = state.Attributes.TryGetValue("wind_speed", out var ws) && ws is not null ? Convert.ToDouble(ws) : (double?)null;
             var windUnit = state.Attributes.TryGetValue("wind_speed_unit", out var wu) && wu is string wus ? wus : "";
             var humidity = state.Attributes.TryGetValue("humidity", out var h) && h is not null ? Convert.ToDouble(h) : (double?)null;
 
-            this.FindControl<TextBlock>("WindText")!.Text = windSpeed is { } w ? $"{w:0.#} {windUnit}".Trim() : "—";
-            this.FindControl<TextBlock>("HumidityText")!.Text = humidity is { } hum ? $"{hum:0}%" : "—";
+            WindText.Text = windSpeed is { } w ? $"{w:0.#} {windUnit}".Trim() : "—";
+            HumidityText.Text = humidity is { } hum ? $"{hum:0}%" : "—";
             windHumidityPanel.IsVisible = true;
         }
         else
@@ -72,11 +67,11 @@ public partial class WeatherWidget : UserControl
             windHumidityPanel.IsVisible = false;
         }
 
-        var forecastGrid = this.FindControl<UniformGrid>("ForecastGrid")!;
+        var forecastGrid = ForecastGrid;
         if (prefs.ShowForecast && prefs.ForecastDays > 0)
         {
             forecastGrid.IsVisible = true;
-            _ = LoadForecastAsync(client, state.EntityId, prefs.ForecastDays);
+            _ = LoadForecastAsync(state.EntityId, prefs.ForecastDays);
         }
         else
         {
@@ -85,16 +80,22 @@ public partial class WeatherWidget : UserControl
         }
     }
 
-    private async System.Threading.Tasks.Task LoadForecastAsync(HaClient client, string entityId, int days)
+    private async System.Threading.Tasks.Task LoadForecastAsync(string entityId, int days)
     {
+        if (HaSession.Client is not { } client) return;
+
         var myToken = ++_forecastToken;
         List<HaForecastEntry> forecast;
         try { forecast = await client.GetForecastAsync(entityId, "daily"); }
-        catch { return; } // best effort — leave whatever forecast was already showing
+        catch (Exception ex)
+        {
+            Log.Swallowed(ex);
+            return; // best effort — leave whatever forecast was already showing
+        }
 
         if (myToken != _forecastToken) return; // superseded by a newer call/track change while we were awaiting
 
-        var forecastGrid = this.FindControl<UniformGrid>("ForecastGrid")!;
+        var forecastGrid = ForecastGrid;
         forecastGrid.Children.Clear();
         forecastGrid.Columns = Math.Min(days, forecast.Count);
 
@@ -120,7 +121,7 @@ public partial class WeatherWidget : UserControl
         };
         var icon = new PathIcon
         {
-            Data = Geometry.Parse(TileIcons.PathFor(HaEntityDisplay.WeatherIconForCondition(day.Condition))),
+            Data = TileIcons.GeometryFor(HaEntityDisplay.WeatherIconForCondition(day.Condition)),
             Width = 16,
             Height = 16,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -157,13 +158,13 @@ public partial class WeatherWidget : UserControl
 
     private void ApplyForeground(IBrush? brush)
     {
-        SetForeground(this.FindControl<PathIcon>("ConditionIcon")!, brush);
-        SetForeground(this.FindControl<TextBlock>("TempText")!, brush);
-        SetForeground(this.FindControl<TextBlock>("ConditionText")!, brush);
-        SetForeground(this.FindControl<PathIcon>("WindIcon")!, brush);
-        SetForeground(this.FindControl<TextBlock>("WindText")!, brush);
-        SetForeground(this.FindControl<PathIcon>("HumidityIcon")!, brush);
-        SetForeground(this.FindControl<TextBlock>("HumidityText")!, brush);
+        SetForeground(ConditionIcon, brush);
+        SetForeground(TempText, brush);
+        SetForeground(ConditionText, brush);
+        SetForeground(WindIcon, brush);
+        SetForeground(WindText, brush);
+        SetForeground(HumidityIcon, brush);
+        SetForeground(HumidityText, brush);
     }
 
     // ClearValue (not Foreground = null) so a disabled background reverts to the theme's

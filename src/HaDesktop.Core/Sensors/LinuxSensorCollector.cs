@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using HaDesktop.Core.Storage;
 
 namespace HaDesktop.Core.Sensors;
 
@@ -7,17 +8,17 @@ public sealed class LinuxSensorCollector : ISystemSensorCollector
 {
     private (long Idle, long Total)? _lastCpuSample;
 
-    public async Task<SensorSnapshot> CollectAsync(CancellationToken ct = default) => new(
-        await SampleCpuPercentAsync(ct),
-        await SampleMemoryPercentAsync(ct),
-        await SampleBatteryPercentAsync(ct),
-        CrossPlatformMetrics.SampleDiskPercent(),
-        CrossPlatformMetrics.SampleUptimeHours(),
+    public async Task<SensorSnapshot> CollectAsync(SensorPreferences prefs, CancellationToken ct = default) => new(
+        prefs.ShareCpu ? await SampleCpuPercentAsync(ct) : null,
+        prefs.ShareMemory ? await SampleMemoryPercentAsync(ct) : null,
+        prefs.ShareBattery ? await SampleBatteryPercentAsync(ct) : null,
+        prefs.ShareDisk ? CrossPlatformMetrics.SampleDiskPercent() : null,
+        prefs.ShareUptime ? CrossPlatformMetrics.SampleUptimeHours() : null,
         ActiveWindowTitle: null, // varies too much across X11/Wayland WMs to support generically yet
-        GpuPercent: await SampleGpuPercentAsync(),
+        GpuPercent: prefs.ShareGpu ? await SampleGpuPercentAsync() : null,
         // No separate activity-vs-capacity distinction here (unlike Windows) — DiskPercent above is
         // already the capacity-based reading, so a second StoragePercent would just duplicate it.
-        NetworkMbps: CrossPlatformMetrics.SampleNetworkThroughputMbps());
+        NetworkMbps: prefs.ShareNetwork ? CrossPlatformMetrics.SampleNetworkThroughputMbps() : null);
 
     /// <summary>NVIDIA via nvidia-smi first; otherwise the amdgpu kernel driver's sysfs busy-percent file (AMD only — Intel has no equivalent).</summary>
     private static async Task<double?> SampleGpuPercentAsync()

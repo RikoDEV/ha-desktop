@@ -37,7 +37,6 @@ public sealed class HaOAuthCredentials
 
     public async Task RefreshAsync(CancellationToken ct = default)
     {
-        using var http = new HttpClient();
         var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["grant_type"] = "refresh_token",
@@ -45,7 +44,7 @@ public sealed class HaOAuthCredentials
             ["client_id"] = ClientId,
         });
 
-        using var response = await http.PostAsync($"{BaseUrl}/auth/token", form, ct).ConfigureAwait(false);
+        using var response = await HaHttp.Client.PostAsync($"{BaseUrl}/auth/token", form, ct).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
@@ -72,14 +71,13 @@ public sealed class HaOAuthCredentials
     /// </summary>
     public async Task RevokeAsync(CancellationToken ct = default)
     {
-        using var http = new HttpClient();
         var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["action"] = "revoke",
             ["token"] = RefreshToken,
         });
 
-        using var response = await http.PostAsync($"{BaseUrl}/auth/token", form, ct).ConfigureAwait(false);
+        using var response = await HaHttp.Client.PostAsync($"{BaseUrl}/auth/token", form, ct).ConfigureAwait(false);
         // HA returns 200 with an empty body on success; not treated as fatal either way — see summary above.
     }
 }

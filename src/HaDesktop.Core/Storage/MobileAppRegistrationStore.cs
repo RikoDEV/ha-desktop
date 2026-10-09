@@ -16,17 +16,15 @@ public static class MobileAppRegistrationStore
 {
     private const string WebhookSecretKey = "mobile-app-webhook";
 
-    private static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "HaDesktop", "mobile-app.json");
+    private static readonly string FilePath = AppDataPaths.For("mobile-app.json");
 
-    private sealed record PersistedMetadata(string DeviceId, string BaseUrl, List<string> RegisteredSensorKeys);
+    internal sealed record PersistedMetadata(string DeviceId, string BaseUrl, List<string> RegisteredSensorKeys);
 
     public static async Task SaveAsync(MobileAppRegistration registration)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
         var metadata = new PersistedMetadata(registration.DeviceId, registration.BaseUrl, registration.RegisteredSensorKeys);
-        await File.WriteAllTextAsync(FilePath, JsonSerializer.Serialize(metadata));
+        await File.WriteAllTextAsync(FilePath, JsonSerializer.Serialize(metadata, StorageJsonContext.Default.PersistedMetadata));
         await SecretStore.Current.SaveAsync(WebhookSecretKey, registration.WebhookId);
     }
 
@@ -47,7 +45,7 @@ public static class MobileAppRegistrationStore
         }
         if (raw is null) return null;
 
-        var metadata = raw.Deserialize<PersistedMetadata>();
+        var metadata = raw.Deserialize(StorageJsonContext.Default.PersistedMetadata);
         if (metadata is null) return null;
 
         var webhookId = await SecretStore.Current.LoadAsync(WebhookSecretKey);

@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using HaDesktop.Core.Ha;
 using Microsoft.Win32;
 
@@ -113,7 +113,12 @@ public sealed class WindowsNativeNotifier : INativeNotifier
         if (imagePath is not null)
             psi.Environment["HA_DESKTOP_IMAGE_PATH"] = imagePath;
         if (actions.Count > 0)
-            psi.Environment["HA_DESKTOP_ACTIONS_JSON"] = JsonSerializer.Serialize(actions.Select(a => new { id = a.Id, title = a.Title, uri = a.Uri }));
+        {
+            var actionsJson = new JsonArray();
+            foreach (var action in actions)
+                actionsJson.Add((JsonNode)new JsonObject { ["id"] = action.Id, ["title"] = action.Title, ["uri"] = action.Uri });
+            psi.Environment["HA_DESKTOP_ACTIONS_JSON"] = actionsJson.ToJsonString();
+        }
 
         try
         {

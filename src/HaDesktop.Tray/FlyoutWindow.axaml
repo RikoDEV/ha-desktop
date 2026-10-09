@@ -6,7 +6,7 @@
         Width="320" Height="470"
         MinWidth="260" MinHeight="360"
         CanResize="True"
-        SystemDecorations="None"
+        WindowDecorations="None"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="-1"
         ShowInTaskbar="False"
@@ -16,7 +16,7 @@
         Background="Transparent">
 
     <!--
-        SystemDecorations="None" drops the OS's own resize border along with its chrome — Avalonia
+        WindowDecorations="None" drops the OS's own resize border along with its chrome — Avalonia
         doesn't grow one back on its own, so CanResize="True" alone gets a resizable window with no
         way to grab an edge (no cursor feedback, no hit-testing there). The Panel below layers thin
         transparent strips (edges) and squares (corners, on top so they win the hit-test in the
